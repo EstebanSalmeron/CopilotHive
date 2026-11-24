@@ -197,8 +197,8 @@ pub fn draw(t: &Tab, f: &mut Frame, area: Rect, tick: u64) {
     ];
     let title = Line::styled(
         tr_fmt!(
-            " agentes del proyecto ({}) · ↑↓ elegir · m modelo 🔒 · d cambiar vista ",
-            " project agents ({}) · ↑↓ select · m model 🔒 · d switch view ",
+            " dashboard · agentes del proyecto ({}) · ↑↓ elegir · m modelo 🔒 · d cambiar vista ",
+            " dashboard · project agents ({}) · ↑↓ select · m model 🔒 · d switch view ",
             rows.len()
         ),
         bold(c_accent()),

@@ -438,7 +438,7 @@ fn welcome() -> Vec<Line<'static>> {
             "Tab / Alt+1..9",
             tr("cambiar de proyecto", "switch project"),
         ),
-        k("d", tr("mostrar/ocultar agentes", "show/hide agents")),
+        k("d", tr("mostrar/ocultar dashboard", "show/hide dashboard")),
         k(
             "Esc / Ctrl+C",
             tr("cancelar el turno en curso", "cancel the running turn"),
@@ -595,7 +595,7 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
 }
 
 fn draw_sidebar(lines: Vec<Line<'static>>, f: &mut Frame, area: Rect) {
-    let title = Line::styled(tr(" visión global ", " global overview "), bold(c_accent()));
+    let title = Line::styled(tr(" dashboard ", " dashboard "), bold(c_accent()));
     f.render_widget(Paragraph::new(lines).block(block(title, c_border())), area);
 }
 
@@ -695,7 +695,7 @@ fn draw_status(
         let mut h = vec![
             ("Enter", tr("escribir", "type")),
             ("↑↓ PgUp/Dn", "scroll"),
-            ("d", tr("agentes", "agents")),
+            ("d", "dashboard"),
             ("S", tr("ajustes", "settings")),
             ("H", tr("historial", "history")),
             ("m", tr("modelo", "model")),
