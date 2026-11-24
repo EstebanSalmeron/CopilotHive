@@ -541,6 +541,15 @@ impl App {
                     self.dash = Dash::Side;
                 }
             }
+            KeyCode::Char('f') => {
+                if t.editor.is_empty() {
+                    "/fleet ".chars().for_each(|c| t.editor.insert(c));
+                }
+                t.typing = true;
+                if self.dash == Dash::Full {
+                    self.dash = Dash::Side;
+                }
+            }
             KeyCode::Esc => t.cancel_turn(),
             _ => {}
         }

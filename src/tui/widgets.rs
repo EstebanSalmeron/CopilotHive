@@ -420,6 +420,13 @@ fn welcome() -> Vec<Line<'static>> {
         Line::default(),
         k("Enter / i", tr("escribir un prompt", "write a prompt")),
         k(
+            "f",
+            tr(
+                "/fleet: subagentes en paralelo (escribe el objetivo)",
+                "/fleet: parallel subagents (type the objective)",
+            ),
+        ),
+        k(
             "Alt+Enter",
             tr("nueva línea en el prompt", "newline in the prompt"),
         ),

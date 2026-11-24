@@ -7,6 +7,7 @@
 | Global | `Tab` / `Shift+Tab`, `Alt+1..9` | cambiar de proyecto (el borrador se conserva por pestaña) |
 | Global | `Ctrl+C` | cancelar el turno en curso (`session/cancel`) |
 | Normal | `Enter` / `i` | escribir un prompt |
+| Normal | `f` | `/fleet`: abre el prompt con `/fleet ` ya escrito; tras el objetivo, Copilot reparte el trabajo en subagentes paralelos (visibles en el dashboard `d`/`s`). `/fleet` es un comando que Copilot anuncia por ACP, así que se envía tal cual |
 | Normal | `Esc` | cancelar el turno en curso |
 | Normal | `↑↓` / `j k`, `PgUp/PgDn`, `Home/End` | scroll; `End` reanuda el autoscroll |
 | Normal | `d` | dashboard lateral: mostrar / ocultar |
