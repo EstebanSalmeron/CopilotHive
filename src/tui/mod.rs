@@ -113,6 +113,10 @@ struct Cache {
 }
 
 struct Tab {
+    /// Stable id: messages from tasks carry it, tab positions shift on close.
+    id: usize,
+    /// Aborted on drop so closing the tab kills the session task and its copilot child.
+    task: Option<tokio::task::AbortHandle>,
     name: String,
     cwd: String,
     sid: Option<String>,
@@ -141,6 +145,14 @@ struct Tab {
     dash_sel: Option<String>,
 }
 
+impl Drop for Tab {
+    fn drop(&mut self) {
+        if let Some(t) = &self.task {
+            t.abort();
+        }
+    }
+}
+
 impl Tab {
     fn new(
         name: String,
@@ -150,6 +162,8 @@ impl Tab {
         assigned: HashMap<String, String>,
     ) -> Self {
         Tab {
+            id: 0,
+            task: None,
             name,
             cwd: String::new(),
             sid: None,
@@ -328,6 +342,7 @@ enum Dash {
 enum Confirm {
     Quit,
     AllowAll,
+    CloseTab,
 }
 
 enum SelTarget {
@@ -345,6 +360,7 @@ struct Selector {
 
 pub struct App {
     tabs: Vec<Tab>,
+    next_id: usize,
     current: usize,
     dash: Dash,
     help: bool,
@@ -357,8 +373,9 @@ pub struct App {
 }
 
 impl App {
-    fn on_msg(&mut self, i: usize, m: Msg) {
-        let Some(t) = self.tabs.get_mut(i) else {
+    fn on_msg(&mut self, id: usize, m: Msg) {
+        // Late messages from a closed tab find no id and are dropped.
+        let Some(t) = self.tabs.iter_mut().find(|t| t.id == id) else {
             return;
         };
         match m {
@@ -419,10 +436,11 @@ impl App {
             if code != KeyCode::Char('y') {
                 return false;
             }
-            if c == Confirm::Quit {
-                return true;
+            match c {
+                Confirm::Quit => return true,
+                Confirm::CloseTab => self.close_current(),
+                Confirm::AllowAll => self.tabs[self.current].set_allow_all(true),
             }
-            self.tabs[self.current].set_allow_all(true);
             return false;
         }
         if self.selector.is_some() {
@@ -512,6 +530,15 @@ impl App {
                     return true;
                 }
             }
+            KeyCode::Char('x') if n < 2 => t.push(Item::Note(
+                settings::tr(
+                    "no se puede cerrar la última pestaña",
+                    "cannot close the last tab",
+                )
+                .into(),
+            )),
+            KeyCode::Char('x') if t.working() => self.confirm = Some(Confirm::CloseTab),
+            KeyCode::Char('x') => self.close_current(),
             KeyCode::Char('d') => {
                 self.dash = match self.dash {
                     Dash::Side | Dash::Full => Dash::Hidden,
@@ -566,6 +593,11 @@ impl App {
         false
     }
 
+    fn close_current(&mut self) {
+        self.tabs.remove(self.current);
+        self.current = self.current.min(self.tabs.len() - 1);
+    }
+
     /// Opens a past session in a new tab (`session/load`), or focuses the tab that already has it.
     fn resume(&mut self, sid: String, title: &str) {
         if let Some(i) = self
@@ -578,14 +610,15 @@ impl App {
         }
         let cur = &self.tabs[self.current];
         let (name, cwd) = (format!("{} ↺", cur.name), cur.cwd.clone());
-        let i = self.tabs.len();
-        let mut tab = spawn_tab(i, name, cwd, Some(sid), &self.tx);
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut tab = spawn_tab(id, name, cwd, Some(sid), &self.tx);
         tab.push(Item::Note(tr_fmt!(
             "sesión reanudada: {title}",
             "session resumed: {title}"
         )));
         self.tabs.push(tab);
-        self.current = i;
+        self.current = self.tabs.len() - 1;
     }
 
     fn move_dash_sel(&mut self, delta: isize) {
@@ -780,7 +813,8 @@ async fn run_project(
     c.on_ctl(ctl, sid.clone());
     let opts = acp::parse_config_options(&s["configOptions"]);
     let _ = tx.send((idx, Msg::Update(Update::Config(opts))));
-    tokio::spawn(watch(idx, sid.clone(), tx.clone()));
+    // Aborting run_project does not stop its children; the guard aborts watch on drop.
+    let _watch = AbortOnDrop(tokio::spawn(watch(idx, sid.clone(), tx.clone())));
     let _ = tx.send((idx, Msg::Ready));
     let mut on_line = |l: &str| {
         if let Some(u) = acp::parse_update(l) {
@@ -806,6 +840,14 @@ async fn run_project(
             }
             r = c.idle(&mut on_line) => r?,
         }
+    }
+}
+
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
 
@@ -848,11 +890,13 @@ fn spawn_tab(i: usize, name: String, cwd: String, resume: Option<String>, tx: &T
     let mut tab = Tab::new(name, ptx, ctl, defs, loaded);
     tab.cwd = cwd.clone();
     let tx2 = tx.clone();
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
         if let Err(e) = run_project(i, cwd, resume, prx, crx, tx2.clone()).await {
             let _ = tx2.send((i, Msg::Failed(format!("{e:#}"))));
         }
     });
+    tab.id = i;
+    tab.task = Some(task.abort_handle());
     tab
 }
 
@@ -892,6 +936,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         tabs.push(tab);
     }
     let mut app = App {
+        next_id: tabs.len(),
         tabs,
         current: 0,
         dash: Dash::Side,
@@ -963,8 +1008,10 @@ mod tests {
         t
     }
 
-    pub(super) fn app(tabs: Vec<Tab>) -> App {
+    pub(super) fn app(mut tabs: Vec<Tab>) -> App {
+        tabs.iter_mut().enumerate().for_each(|(i, t)| t.id = i);
         App {
+            next_id: tabs.len(),
             tabs,
             current: 0,
             dash: Dash::Side,
@@ -1019,6 +1066,26 @@ mod tests {
         assert!(a.on_key(key(KeyCode::Char('y'))));
         a.tabs[1].busy = false;
         assert!(a.on_key(key(KeyCode::Char('q'))));
+    }
+
+    #[test]
+    fn close_tab_rules_and_late_messages() {
+        let mut a = app(vec![tab("a"), tab("b"), tab("c")]);
+        a.current = 1;
+        a.on_key(key(KeyCode::Char('x')));
+        assert_eq!((a.tabs.len(), a.current), (2, 1));
+        assert_eq!(a.tabs[1].name, "c");
+        a.on_msg(1, Msg::Warn("late".into())); // id 1 was closed
+        assert!(a.tabs.iter().all(|t| t.items.is_empty()));
+        a.on_msg(2, Msg::Warn("hi".into())); // id 2 now sits at position 1
+        assert_eq!(a.tabs[1].items.len(), 1);
+        a.tabs[1].busy = true;
+        a.on_key(key(KeyCode::Char('x')));
+        assert!(a.confirm == Some(Confirm::CloseTab) && a.tabs.len() == 2);
+        a.on_key(key(KeyCode::Char('y')));
+        assert_eq!((a.tabs.len(), a.current), (1, 0));
+        a.on_key(key(KeyCode::Char('x')));
+        assert_eq!(a.tabs.len(), 1);
     }
 
     #[test]

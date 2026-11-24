@@ -646,6 +646,14 @@ fn draw_status(
             ),
             bold(c_error()),
         )
+    } else if confirm == Some(&Confirm::CloseTab) {
+        Line::styled(
+            tr(
+                " ¿Cerrar pestaña? Está trabajando.  y: cerrar · otra tecla: volver",
+                " Close tab? It is working.  y: close · any other key: back",
+            ),
+            bold(c_attention()),
+        )
     } else if confirm.is_some() {
         Line::styled(
             tr(
@@ -1005,6 +1013,13 @@ fn draw_help(f: &mut Frame, area: Rect) {
             tr(
                 "permiso: aprobar / rechazar / siempre / allow all",
                 "permission: approve / reject / always / allow all",
+            ),
+        ),
+        (
+            "x",
+            tr(
+                "cerrar pestaña (confirma si trabaja)",
+                "close tab (asks if it is working)",
             ),
         ),
         (

@@ -20,6 +20,7 @@
 | Subagentes | `↑↓`, `m` | elegir agente; `m` fija su modelo obligatorio 🔒 |
 | Normal | `!` | saltar al siguiente proyecto con permiso pendiente |
 | Normal | `?` | ayuda |
+| Normal | `x` | cerrar la pestaña actual (confirma si trabaja; la última no se cierra) |
 | Normal | `q` | salir (confirma si hay agentes trabajando) |
 | Escribiendo | `Enter` | enviar |
 | Escribiendo | `Alt+Enter` / `Shift+Enter` / `Ctrl+J` | nueva línea |
