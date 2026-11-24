@@ -133,8 +133,9 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     let t = &mut app.tabs[app.current];
     let in_w = area.width.saturating_sub(2) as usize;
     let in_rows = t.editor.layout(in_w).0.len().clamp(1, 6) as u16;
-    let [_, _, info, body, input, status] = Layout::vertical([
+    let [_, _, info, _, body, input, status] = Layout::vertical([
         Constraint::Length(5),
+        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Min(3),
@@ -248,7 +249,7 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
         ),
         Span::styled(" · ", fg(c_border())),
         Span::styled(
-            tr_fmt!("◈{subs} subagentes", "◈{subs} subagents"),
+            tr_fmt!("{subs} subagentes", "{subs} subagents"),
             fg(c_purple()),
         ),
         Span::styled(" · ", fg(c_border())),
