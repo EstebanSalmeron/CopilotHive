@@ -13,6 +13,13 @@
 | Normal | `d` | dashboard: mostrar / ocultar |
 | Normal | `s` | vista completa de subagentes: abrir / cerrar |
 | Normal | `H` | historial: sesiones anteriores del proyecto (`↑↓` elegir, `Enter` abrir, `r` reanudar en una pestaña nueva (`session/load`), `Esc` volver/cerrar; en la conversación `↑↓ PgUp/PgDn Home/End`) |
+| Normal | `o` | abrir carpeta: explorador de directorios para abrir una nueva pestaña con sesión ACP nueva |
+| Abrir | `↑↓` / `j k`, `PgUp/PgDn`, `Home/End` | mover selección en el explorador |
+| Abrir | `Enter` / `→` / `l` | entrar en la carpeta seleccionada (o `..`; los archivos se muestran atenuados y no se abren) |
+| Abrir | `Backspace` / `←` / `h` | subir al directorio padre |
+| Abrir | `.` | mostrar / ocultar archivos y carpetas ocultos |
+| Abrir | `~` | ir a `$HOME` |
+| Abrir | `o` / `Esc` | abrir la carpeta actual en una nueva pestaña / cerrar |
 | Normal | `S` | ajustes: tema (oscuro/claro) e idioma (español/English); `↑↓` elegir, `Enter`/`←→` cambiar, `Esc` cerrar. Se guarda en `~/.config/copilot-cockpit/settings.toml` |
 | Normal | `A` | allow all on/off (pide confirmación al activar; también en el modal de permiso) |
 | Normal | `m` / `e` | selector de modelo / reasoning effort de la sesión (`session/set_config_option`) |

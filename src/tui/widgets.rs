@@ -85,7 +85,7 @@ fn status_icon(t: &Tab, tick: u64) -> Span<'static> {
         Span::styled("⚠", bold(c))
     } else if t.allow_all {
         Span::styled(
-            "⚡",
+            "↯",
             bold(if blink_on(tick) {
                 c_error()
             } else {
@@ -168,7 +168,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         dash == Dash::Full,
         others_pending,
     );
-    let modal = app.confirm.is_some() || app.selector.is_some();
+    let modal = app.confirm.is_some() || app.selector.is_some() || app.open.is_some();
     if app.confirm == Some(Confirm::AllowAll) {
         modals::draw_confirm(f, area);
     } else if let Some(s) = &app.selector {
@@ -183,6 +183,9 @@ pub fn draw(app: &mut App, f: &mut Frame) {
             f,
             Rect::new(area.x, area.y + 5, area.width, area.height - 5),
         );
+    }
+    if let Some(o) = &app.open {
+        o.draw(f, area);
     }
     if let Some(m) = &app.settings {
         m.draw(f, area);
@@ -310,7 +313,7 @@ fn draw_info(t: &Tab, f: &mut Frame, area: Rect, tick: u64) {
         } else {
             c_attention()
         };
-        spans.push(Span::styled(" ⚡ ALLOW ALL ", bold(c_bg()).bg(c)));
+        spans.push(Span::styled(" ↯ ALLOW ALL ", bold(c_bg()).bg(c)));
         spans.push(Span::raw(" "));
     }
     match t.model() {
@@ -705,6 +708,7 @@ fn draw_status(
             ("Enter", tr("escribir", "type")),
             ("↑↓ PgUp/Dn", "scroll"),
             ("d", "dashboard"),
+            ("o", tr("abrir", "open")),
             ("S", tr("ajustes", "settings")),
             ("H", tr("historial", "history")),
             ("m", tr("modelo", "model")),

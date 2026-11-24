@@ -137,7 +137,7 @@ pub(super) fn draw_confirm(f: &mut Frame, area: Rect) {
     f.render_widget(Clear, r);
     f.render_widget(
         Paragraph::new(lines).block(
-            block(Line::styled(" ⚡ ALLOW ALL ", bold(c_error())), c_error())
+            block(Line::styled(" ↯ ALLOW ALL ", bold(c_error())), c_error())
                 .padding(Padding::horizontal(1)),
         ),
         r,
@@ -265,6 +265,13 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect) {
             tr(
                 "historial: conversaciones anteriores del proyecto",
                 "history: past conversations of the project",
+            ),
+        ),
+        (
+            "o",
+            tr(
+                "abrir: explorar carpetas y abrir proyecto en nueva pestaña",
+                "open: browse folders and open project in a new tab",
             ),
         ),
         (

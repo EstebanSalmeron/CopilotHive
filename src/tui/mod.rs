@@ -11,6 +11,7 @@ mod history;
 mod input;
 mod markdown;
 mod modals;
+mod open;
 mod session;
 mod settings;
 mod theme;
@@ -44,6 +45,7 @@ enum Msg {
     Warn(String),
     Failed(String),
     History(history::Loaded),
+    Open(open::Loaded),
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -371,6 +373,7 @@ pub struct App {
     confirm: Option<Confirm>,
     selector: Option<Selector>,
     history: Option<history::History>,
+    open: Option<open::Browser>,
     settings: Option<settings::Menu>,
     tx: Tx,
     tick: u64,
@@ -384,6 +387,12 @@ impl App {
             }
             return;
         }
+        if let Msg::Open(ev) = m {
+            if let Some(o) = &mut self.open {
+                o.on_loaded(ev);
+            }
+            return;
+        }
         // Late messages from a closed tab find no id and are dropped.
         let Some(t) = self.tabs.iter_mut().find(|t| t.id == id) else {
             return;
@@ -393,8 +402,8 @@ impl App {
             Msg::Perm(p) if t.allow_all => {
                 let title = p.params["toolCall"]["title"].as_str().unwrap_or("tool");
                 let note = tr_fmt!(
-                    "⚡ auto-aprobado (allow all): {title}",
-                    "⚡ auto-approved (allow all): {title}"
+                    "↯ auto-aprobado (allow all): {title}",
+                    "↯ auto-approved (allow all): {title}"
                 );
                 let _ = p
                     .reply
@@ -420,7 +429,7 @@ impl App {
                 t.busy = false;
                 t.perm = None;
             }
-            Msg::History(_) => {}
+            Msg::History(_) | Msg::Open(_) => {}
         }
     }
 
@@ -462,6 +471,20 @@ impl App {
         if let Some(m) = &mut self.settings {
             if m.on_key(code) {
                 self.settings = None;
+            }
+            return false;
+        }
+        if let Some(o) = &mut self.open {
+            match o.on_key(code) {
+                open::Action::None => {}
+                open::Action::Close => self.open = None,
+                open::Action::Load(req, dir, hidden) => {
+                    spawn_read_dir(req, dir, hidden, &self.tx);
+                }
+                open::Action::Open(path) => {
+                    self.open = None;
+                    self.open_dir(path);
+                }
             }
             return false;
         }
@@ -577,6 +600,12 @@ impl App {
             KeyCode::Char('m') => self.open_selector(true),
             KeyCode::Char('e') => self.open_selector(false),
             KeyCode::Char('S') => self.settings = Some(settings::Menu::new()),
+            KeyCode::Char('o') => {
+                let dir = start_dir(&t.cwd);
+                let (b, req) = open::Browser::open(dir.clone());
+                self.open = Some(b);
+                spawn_read_dir(req, dir, false, &self.tx);
+            }
             KeyCode::Char('H') => {
                 let (h, req) = history::History::open(&t.name);
                 let cwd = t.cwd.clone();
@@ -646,6 +675,21 @@ impl App {
             "sesión reanudada: {title}",
             "session resumed: {title}"
         )));
+        self.tabs.push(tab);
+        self.current = self.tabs.len() - 1;
+    }
+
+    /// Opens `path` as a new tab with a fresh ACP session and focuses it.
+    fn open_dir(&mut self, path: PathBuf) {
+        let path = std::fs::canonicalize(&path).unwrap_or(path);
+        let cwd = path.to_string_lossy().into_owned();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| cwd.clone());
+        let id = self.next_id;
+        self.next_id += 1;
+        let tab = spawn_tab(id, name, cwd, None, &self.tx);
         self.tabs.push(tab);
         self.current = self.tabs.len() - 1;
     }
@@ -751,6 +795,28 @@ impl App {
     }
 }
 
+/// Starting directory for the Open browser: tab `cwd`, else `$HOME`, else `.`.
+fn start_dir(cwd: &str) -> PathBuf {
+    let p = PathBuf::from(cwd);
+    let chosen = if !cwd.is_empty() && p.is_dir() {
+        p
+    } else {
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|h| h.is_dir())
+            .unwrap_or_else(|| PathBuf::from("."))
+    };
+    std::fs::canonicalize(&chosen).unwrap_or(chosen)
+}
+
+fn spawn_read_dir(req: u64, dir: PathBuf, show_hidden: bool, tx: &Tx) {
+    let tx = tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let entries = open::read_dir(&dir, show_hidden);
+        let _ = tx.send((0, Msg::Open(open::Loaded { req, entries })));
+    });
+}
+
 /// Draft that asks Copilot to run the given subagent.
 fn subagent_prompt(name: &str) -> String {
     format!(
@@ -804,8 +870,8 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
             tab.allow_all = true;
             tab.push(Item::Note(
                 settings::tr(
-                    "⚡ allow_all=true en la config: se aprobarán todos los permisos",
-                    "⚡ allow_all=true in config: every permission will be approved",
+                    "↯ allow_all=true en la config: se aprobarán todos los permisos",
+                    "↯ allow_all=true in config: every permission will be approved",
                 )
                 .into(),
             ));
@@ -825,6 +891,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         confirm: None,
         selector: None,
         history: None,
+        open: None,
         settings: None,
         tx,
         tick: 0,
@@ -900,6 +967,7 @@ mod tests {
             confirm: None,
             selector: None,
             history: None,
+            open: None,
             settings: None,
             tx: unbounded_channel().0,
             tick: 0,
@@ -1047,5 +1115,31 @@ mod tests {
         assert!(
             matches!(&t.items[0], Item::Tool { title, state: ToolState::Ok, .. } if title == "ls")
         );
+    }
+
+    #[tokio::test]
+    async fn open_modal_creates_and_focuses_new_tab() {
+        let dir =
+            std::env::temp_dir().join(format!("copilot-cockpit-open-tab-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let canonical = std::fs::canonicalize(&dir).unwrap();
+
+        let mut a = app(vec![tab("initial")]);
+        a.tabs[0].cwd = canonical.to_string_lossy().into_owned();
+        a.on_key(key(KeyCode::Char('o')));
+        assert!(a.open.is_some());
+
+        a.on_key(key(KeyCode::Char('o')));
+        assert!(a.open.is_none());
+        assert_eq!(a.tabs.len(), 2);
+        assert_eq!(a.current, 1);
+        assert_eq!(
+            a.tabs[1].name,
+            canonical.file_name().unwrap().to_string_lossy()
+        );
+        assert_eq!(a.tabs[1].cwd, canonical.to_string_lossy());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

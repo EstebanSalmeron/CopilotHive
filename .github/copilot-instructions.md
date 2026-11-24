@@ -20,7 +20,7 @@ Spike cerrado (conclusiones en `docs/spike-acp.md`): ACP para control (prompts, 
 MVP: `copilot-cockpit tui [--config FILE]` (por defecto `~/.config/copilot-cockpit/projects.toml`,
 con `[[projects]]` `name`/`path`): una sesión ACP por proyecto, pestañas con transcripción, prompts,
 permisos (`y`/`n`) y dashboard de agentes (`d`). `copilot-cockpit spike ...` conserva el spike.
-Teclas completas en `docs/tui-keys.md`. UI en `src/tui/{mod,theme,widgets,modals,session,input,markdown,dashboard,history,settings}.rs`.
+Teclas completas en `docs/tui-keys.md`. UI en `src/tui/{mod,theme,widgets,modals,session,input,markdown,dashboard,history,open,settings}.rs`.
 
 ## Stack
 
