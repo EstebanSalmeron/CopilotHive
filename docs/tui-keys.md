@@ -16,6 +16,7 @@
 | Normal | `S` | ajustes: tema (oscuro/claro) e idioma (español/English); `↑↓` elegir, `Enter`/`←→` cambiar, `Esc` cerrar. Se guarda en `~/.config/copilot-cockpit/settings.toml` |
 | Normal | `A` | allow all on/off (pide confirmación al activar; también en el modal de permiso) |
 | Normal | `m` / `e` | selector de modelo / reasoning effort de la sesión (`session/set_config_option`) |
+| Subagentes | `Enter` | abre el prompt con «Usa el subagente <nombre> para: » (si el editor está vacío) para lanzar el agente elegido |
 | Subagentes | `↑↓`, `m` | elegir agente; `m` fija su modelo obligatorio 🔒 |
 | Normal | `!` | saltar al siguiente proyecto con permiso pendiente |
 | Normal | `?` | ayuda |

@@ -253,7 +253,7 @@ pub fn draw(t: &Tab, f: &mut Frame, area: Rect, tick: u64) {
     });
     f.render_widget(
         Paragraph::new(Line::styled(
-            tr_fmt!(
+            format!("{} · {}", tr_fmt!(
                 " Total: {} agentes · {runs} ejecuciones · {tools} tools · in {} · out {} · cache {} · {} · {}", " Total: {} agents · {runs} runs · {tools} tools · in {} · out {} · cache {} · {} · {}",
                 rows.len(),
                 human(all.input),
@@ -261,7 +261,7 @@ pub fn draw(t: &Tab, f: &mut Frame, area: Rect, tick: u64) {
                 human(all.cache_read + all.cache_write),
                 cost(all.credits()),
                 fmt_dur(time)
-            ),
+            ), tr("Enter: usar subagente", "Enter: use subagent")),
             bold(c_fg()),
         )),
         foot_a,

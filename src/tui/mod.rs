@@ -536,6 +536,16 @@ impl App {
             KeyCode::Char('?') => self.help = true,
             KeyCode::Char('!') => return self.jump_attention(),
             KeyCode::Enter | KeyCode::Char('i') => {
+                if code == KeyCode::Enter && self.dash == Dash::Full && t.editor.is_empty() {
+                    let rows = dashboard::rows(t);
+                    let sel = t.dash_sel.as_ref();
+                    let row = rows.iter().find(|r| Some(&r.name) == sel || sel.is_none());
+                    if let Some(r) = row.filter(|r| r.name != "main") {
+                        subagent_prompt(&r.name)
+                            .chars()
+                            .for_each(|c| t.editor.insert(c));
+                    }
+                }
                 t.typing = true;
                 if self.dash == Dash::Full {
                     self.dash = Dash::Side;
@@ -677,6 +687,15 @@ impl App {
         }
         false
     }
+}
+
+/// Draft that asks Copilot to run the given subagent.
+fn subagent_prompt(name: &str) -> String {
+    format!(
+        "{} {name} {} ",
+        settings::tr("Usa el subagente", "Use the subagent"),
+        settings::tr("para:", "for:")
+    )
 }
 
 /// Persists a mandatory subagent model in the Copilot user settings and records it.
@@ -1000,6 +1019,33 @@ mod tests {
         assert!(a.on_key(key(KeyCode::Char('y'))));
         a.tabs[1].busy = false;
         assert!(a.on_key(key(KeyCode::Char('q'))));
+    }
+
+    #[test]
+    fn enter_in_full_dashboard_drafts_subagent_prompt() {
+        let def = |n: &str| crate::agents::AgentDef {
+            name: n.into(),
+            description: String::new(),
+            model: None,
+            builtin: true,
+        };
+        let mut a = app(vec![tab("a")]);
+        a.tabs[0].defs = vec![def("explore")].into();
+        a.dash = Dash::Full;
+        a.tabs[0].dash_sel = Some("explore".into());
+        a.on_key(key(KeyCode::Enter));
+        assert_eq!(a.tabs[0].editor.text, subagent_prompt("explore"));
+        assert!(a.tabs[0].typing && a.dash == Dash::Side);
+        // "main" and an existing draft are left untouched
+        for (sel, draft) in [("main", ""), ("explore", "draft")] {
+            let mut a = app(vec![tab("a")]);
+            a.tabs[0].defs = vec![def("explore")].into();
+            a.dash = Dash::Full;
+            a.tabs[0].dash_sel = Some(sel.into());
+            draft.chars().for_each(|c| a.tabs[0].editor.insert(c));
+            a.on_key(key(KeyCode::Enter));
+            assert_eq!(a.tabs[0].editor.text, draft);
+        }
     }
 
     #[test]

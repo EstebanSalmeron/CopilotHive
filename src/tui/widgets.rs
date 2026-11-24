@@ -973,6 +973,13 @@ fn draw_help(f: &mut Frame, area: Rect) {
             ),
         ),
         (
+            "Enter (subagentes)",
+            tr(
+                "abre el prompt para pedir a Copilot que use el agente elegido",
+                "opens the prompt asking Copilot to use the selected agent",
+            ),
+        ),
+        (
             "↑ ↓ (subagentes)",
             tr(
                 "elegir agente; m fija su modelo obligatorio 🔒",
@@ -1113,7 +1120,7 @@ mod tests {
         m.on_key(ratatui::crossterm::event::KeyCode::Enter); // language -> English
         let mut a = app(vec![tab("a")]);
         assert!(screen(&mut a, 40, 10).contains("Terminal too small"));
-        assert_eq!(c_bg(), Color::Rgb(0xe1, 0xe2, 0xe7));
+        assert_eq!(c_bg(), Color::Rgb(0xd2, 0xd5, 0xe3));
     }
 
     #[test]
