@@ -1,15 +1,15 @@
-//! Drawing: tabs, info bar, transcript, agent sidebar, prompt box, status bar and overlays.
+//! Drawing: tabs, info bar, transcript, agent sidebar, prompt box and status bar.
 use super::markdown::{render, wrap};
-use super::settings::tr;
+use super::modals;
+use super::settings::{self, tr};
 use super::theme::*;
-use super::{App, Cache, Confirm, Dash, Item, Life, Selector, Tab, ToolState, dashboard};
-use crate::acp;
+use super::{App, Cache, Confirm, Dash, Item, Life, Tab, ToolState, dashboard};
 use crate::events::Status;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
+use ratatui::widgets::{Block, BorderType, Paragraph};
 use std::borrow::Cow;
 use std::time::Duration;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -170,11 +170,11 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     );
     let modal = app.confirm.is_some() || app.selector.is_some();
     if app.confirm == Some(Confirm::AllowAll) {
-        draw_allow_all_confirm(f, area);
+        modals::draw_confirm(f, area);
     } else if let Some(s) = &app.selector {
-        draw_selector(s, f, area);
+        modals::draw_selector(s, f, area);
     } else if t.perm.is_some() {
-        draw_perm(t, f, area, tick, others_pending);
+        modals::draw_perm(t, f, area, tick, others_pending);
     } else if let Some(pos) = cursor.filter(|_| t.typing && !help && !modal) {
         f.set_cursor_position(pos);
     }
@@ -188,7 +188,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         m.draw(f, area);
     }
     if help {
-        draw_help(f, area);
+        modals::draw_help(f, area);
     }
 }
 
@@ -253,7 +253,7 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
     ]);
     let title = Line::from(vec![
         Span::styled("◆ COPILOT COCKPIT", bold(c_accent())),
-        Span::styled("  centro de mando", fg(c_dim())),
+        Span::styled(tr("  centro de mando", "  command center"), fg(c_dim())),
     ]);
     f.render_widget(
         Paragraph::new(vec![title, summary, Line::from(spans)]),
@@ -498,19 +498,21 @@ fn draw_transcript(t: &mut Tab, f: &mut Frame, area: Rect, tick: u64) {
             l.into()
         }
         Life::Starting if t.items.is_empty() => vec![Line::styled(
-            format!("  {} starting…", spinner(tick)),
+            tr_fmt!("  {} iniciando…", "  {} starting…", spinner(tick)),
             fg(c_running()),
         )]
         .into(),
         _ if t.items.is_empty() => welcome().into(),
         _ => {
+            let light = settings::light();
             if t.cache
                 .as_ref()
-                .is_none_or(|c| c.width != width || c.rev != t.rev)
+                .is_none_or(|c| c.width != width || c.rev != t.rev || c.light != light)
             {
                 t.cache = Some(Cache {
                     width,
                     rev: t.rev,
+                    light,
                     lines: build_lines(&t.items, width),
                 });
             }
@@ -530,11 +532,17 @@ fn draw_transcript(t: &mut Tab, f: &mut Frame, area: Rect, tick: u64) {
         } else {
             c_orange()
         };
-        blk = blk.title_bottom(Line::styled(" ↓ nuevo (End) ", bold(c)).right_aligned());
+        blk = blk.title_bottom(
+            Line::styled(tr(" ↓ nuevo (End) ", " ↓ new (End) "), bold(c)).right_aligned(),
+        );
     } else if t.scroll.off > 0 {
         blk = blk.title_bottom(
             Line::styled(
-                format!(" ↑ {} filas arriba (End) ", t.scroll.off),
+                tr_fmt!(
+                    " ↑ {} filas arriba (End) ",
+                    " ↑ {} lines up (End) ",
+                    t.scroll.off
+                ),
                 fg(c_dim()),
             )
             .right_aligned(),
@@ -687,7 +695,8 @@ fn draw_status(
         hints(&[
             ("↑↓", tr("elegir", "select")),
             ("m", tr("modelo 🔒", "model 🔒")),
-            ("d", tr("vista", "view")),
+            ("s", tr("vista lateral", "side view")),
+            ("d", tr("ocultar", "hide")),
             ("Tab", tr("proyecto", "project")),
             ("?", tr("ayuda", "help")),
         ])
@@ -719,344 +728,6 @@ fn draw_status(
         hints(&h)
     };
     f.render_widget(Paragraph::new(line), area);
-}
-
-/// Short human description of what the tool wants to run.
-fn perm_detail(params: &serde_json::Value) -> String {
-    let raw = &params["toolCall"]["rawInput"];
-    match raw {
-        serde_json::Value::Null => String::new(),
-        v => v["command"]
-            .as_str()
-            .map_or_else(|| v.to_string(), str::to_string),
-    }
-}
-
-fn draw_perm(t: &Tab, f: &mut Frame, area: Rect, tick: u64, others: usize) {
-    let Some(p) = &t.perm else { return };
-    let c = if blink_on(tick) {
-        c_attention()
-    } else {
-        c_orange()
-    };
-    let r = centered(area, area.width.min(80), 12);
-    let tc = &p.params["toolCall"];
-    let title = tc["title"]
-        .as_str()
-        .unwrap_or(tr("permiso solicitado", "permission requested"));
-    let w = r.width.saturating_sub(4) as usize;
-    let mut lines = vec![
-        Line::styled(trunc(title, w), bold(c_fg())),
-        Line::styled(
-            tr_fmt!("tipo: {}", "kind: {}", tc["kind"].as_str().unwrap_or("?")),
-            fg(c_dim()),
-        ),
-        Line::default(),
-    ];
-    let detail = perm_detail(&p.params);
-    for l in detail.lines().take(4) {
-        lines.extend(
-            wrap(&Line::styled(l.to_string(), fg(c_orange())), w)
-                .into_iter()
-                .take(2),
-        );
-    }
-    lines.push(Line::default());
-    let mut btns = vec![
-        Span::styled(
-            tr(" [y] aprobar ", " [y] approve "),
-            bold(c_bg()).bg(c_ok()),
-        ),
-        Span::raw("  "),
-        Span::styled(
-            tr(" [n] rechazar ", " [n] reject "),
-            bold(c_bg()).bg(c_error()),
-        ),
-    ];
-    if acp::always_option(&p.params).is_some() {
-        btns.extend([
-            Span::raw("  "),
-            Span::styled(
-                tr(" [a] siempre ", " [a] always "),
-                bold(c_bg()).bg(c_attention()),
-            ),
-        ]);
-    }
-    lines.push(Line::from(btns));
-    if others > 0 {
-        lines.push(Line::styled(
-            tr_fmt!(
-                "{others} proyecto(s) más esperan permiso (!)",
-                "{others} more project(s) waiting for permission (!)"
-            ),
-            fg(c_dim()),
-        ));
-    }
-    f.render_widget(Clear, r);
-    f.render_widget(
-        Paragraph::new(lines).block(
-            block(
-                Line::styled(
-                    tr_fmt!(
-                        " ⚠ Permiso requerido · {} ",
-                        " ⚠ Permission required · {} ",
-                        t.name
-                    ),
-                    bold(c),
-                ),
-                c,
-            )
-            .padding(ratatui::widgets::Padding::horizontal(1)),
-        ),
-        r,
-    );
-}
-
-fn draw_allow_all_confirm(f: &mut Frame, area: Rect) {
-    let r = centered(area, area.width.min(64), 8);
-    let lines = vec![
-        Line::styled(
-            tr(
-                "Se aprobarán TODOS los permisos sin preguntar",
-                "ALL permissions will be approved without asking",
-            ),
-            bold(c_error()),
-        ),
-        Line::styled(
-            tr(
-                "(comandos, escritura de ficheros, red) en esta sesión.",
-                "(commands, file writes, network) in this session.",
-            ),
-            fg(c_fg()),
-        ),
-        Line::default(),
-        Line::from(vec![
-            Span::styled(
-                tr(" [y] activar ", " [y] enable "),
-                bold(c_bg()).bg(c_error()),
-            ),
-            Span::raw("  "),
-            Span::styled(
-                tr(
-                    " cualquier otra tecla: cancelar ",
-                    " any other key: cancel ",
-                ),
-                bold(c_bg()).bg(c_ok()),
-            ),
-        ]),
-    ];
-    f.render_widget(Clear, r);
-    f.render_widget(
-        Paragraph::new(lines).block(
-            block(Line::styled(" ⚡ ALLOW ALL ", bold(c_error())), c_error())
-                .padding(ratatui::widgets::Padding::horizontal(1)),
-        ),
-        r,
-    );
-}
-
-fn draw_selector(s: &Selector, f: &mut Frame, area: Rect) {
-    let h = (s.items.len() as u16 + 4).min(area.height.saturating_sub(2));
-    let r = centered(area, area.width.min(56), h);
-    let rows = h.saturating_sub(4) as usize;
-    let top = (s.sel + 1).saturating_sub(rows);
-    let mut lines: Vec<Line<'static>> = s
-        .items
-        .iter()
-        .enumerate()
-        .skip(top)
-        .take(rows)
-        .map(|(i, (v, label))| {
-            let text = if label == v {
-                v.clone()
-            } else {
-                format!("{label} ({v})")
-            };
-            if i == s.sel {
-                Line::styled(format!("▶ {text}"), bold(c_bg()).bg(c_accent()))
-            } else {
-                Line::styled(format!("  {text}"), fg(c_fg()))
-            }
-        })
-        .collect();
-    lines.push(Line::default());
-    lines.push(Line::styled(
-        tr(
-            "↑↓ elegir · Enter aplicar · Esc cerrar",
-            "↑↓ select · Enter apply · Esc close",
-        ),
-        fg(c_dim()),
-    ));
-    f.render_widget(Clear, r);
-    f.render_widget(
-        Paragraph::new(lines).block(
-            block(
-                Line::styled(format!(" {} ", s.title), bold(c_accent())),
-                c_accent(),
-            )
-            .padding(ratatui::widgets::Padding::horizontal(1)),
-        ),
-        r,
-    );
-}
-
-fn draw_help(f: &mut Frame, area: Rect) {
-    let rows = [
-        (
-            "Tab / Shift+Tab",
-            tr("siguiente / anterior proyecto", "next / previous project"),
-        ),
-        ("Alt+1..9", tr("ir al proyecto n", "go to project n")),
-        (
-            "!",
-            tr(
-                "saltar al proyecto con permiso pendiente",
-                "jump to the project with a pending permission",
-            ),
-        ),
-        (
-            "Enter / i",
-            tr(
-                "escribir (el borrador se guarda por proyecto)",
-                "type (the draft is kept per project)",
-            ),
-        ),
-        ("Enter", tr("enviar (en el prompt)", "send (in the prompt)")),
-        ("Alt+Enter / Ctrl+J", tr("nueva línea", "newline")),
-        ("← → Home End", tr("mover el cursor", "move the cursor")),
-        (
-            "Ctrl+W / Ctrl+U",
-            tr(
-                "borrar palabra / hasta inicio de línea",
-                "delete word / to start of line",
-            ),
-        ),
-        (
-            "Esc",
-            tr(
-                "salir del prompt; en modo normal cancela el turno",
-                "leave the prompt; in normal mode cancels the turn",
-            ),
-        ),
-        (
-            "Ctrl+C",
-            tr("cancelar el turno en curso", "cancel the running turn"),
-        ),
-        (
-            "↑ ↓ PgUp PgDn",
-            tr("scroll de la transcripción", "scroll the transcript"),
-        ),
-        (
-            "Home / End",
-            tr(
-                "inicio / final (End reanuda el autoscroll)",
-                "top / bottom (End resumes autoscroll)",
-            ),
-        ),
-        (
-            "d",
-            tr(
-                "dashboard lateral: mostrar / ocultar",
-                "side dashboard: show / hide",
-            ),
-        ),
-        (
-            "s",
-            tr(
-                "vista completa de subagentes: abrir / cerrar",
-                "full subagent view: open / close",
-            ),
-        ),
-        (
-            "H",
-            tr(
-                "historial: conversaciones anteriores del proyecto",
-                "history: past conversations of the project",
-            ),
-        ),
-        (
-            "S",
-            tr(
-                "ajustes: tema (oscuro/claro) e idioma",
-                "settings: theme (dark/light) and language",
-            ),
-        ),
-        (
-            "Enter (subagentes)",
-            tr(
-                "abre el prompt para pedir a Copilot que use el agente elegido",
-                "opens the prompt asking Copilot to use the selected agent",
-            ),
-        ),
-        (
-            "↑ ↓ (subagentes)",
-            tr(
-                "elegir agente; m fija su modelo obligatorio 🔒",
-                "pick agent; m sets its required model 🔒",
-            ),
-        ),
-        (
-            "m / e",
-            tr(
-                "elegir modelo / reasoning effort de la sesión",
-                "pick the session model / reasoning effort",
-            ),
-        ),
-        (
-            "A",
-            tr(
-                "allow all (aprobar todos los permisos) on/off",
-                "allow all (approve every permission) on/off",
-            ),
-        ),
-        (
-            "y / n / a / A",
-            tr(
-                "permiso: aprobar / rechazar / siempre / allow all",
-                "permission: approve / reject / always / allow all",
-            ),
-        ),
-        (
-            "x",
-            tr(
-                "cerrar pestaña (confirma si trabaja)",
-                "close tab (asks if it is working)",
-            ),
-        ),
-        (
-            "q",
-            tr(
-                "salir (pide confirmación si hay trabajo)",
-                "quit (asks for confirmation if work is running)",
-            ),
-        ),
-    ];
-    let mut lines: Vec<Line<'static>> = rows
-        .iter()
-        .map(|(k, d)| {
-            Line::from(vec![
-                Span::styled(format!(" {k:<19}"), bold(c_accent())),
-                Span::styled(*d, fg(c_fg())),
-            ])
-        })
-        .collect();
-    lines.push(Line::default());
-    lines.push(Line::styled(
-        tr(
-            " Pulsa cualquier tecla para cerrar",
-            " Press any key to close",
-        ),
-        fg(c_dim()),
-    ));
-    let r = centered(area, 78, lines.len() as u16 + 2);
-    f.render_widget(Clear, r);
-    f.render_widget(
-        Paragraph::new(lines).block(block(
-            Line::styled(tr(" Ayuda ", " Help "), bold(c_accent())),
-            c_accent(),
-        )),
-        r,
-    );
 }
 
 #[cfg(test)]
@@ -1137,6 +808,37 @@ mod tests {
         let mut a = app(vec![tab("a")]);
         assert!(screen(&mut a, 40, 10).contains("Terminal too small"));
         assert_eq!(c_bg(), Color::Rgb(0xd2, 0xd5, 0xe3));
+    }
+
+    #[test]
+    fn transcript_cache_invalidates_on_theme_change() {
+        let mut t = tab("alpha");
+        t.push(Item::Agent("unique_cache_probe".into()));
+        let mut a = app(vec![t]);
+
+        let fg_of_probe = |a: &mut App| -> Color {
+            let mut term = Terminal::new(TestBackend::new(100, 30)).unwrap();
+            term.draw(|f| draw(a, f)).unwrap();
+            let buf = term.backend().buffer();
+            let probe = "unique_cache_probe";
+            for y in 0..30 {
+                let cells: Vec<&str> = (0..100).map(|x| buf[(x, y)].symbol()).collect();
+                if let Some(x) = cells.windows(probe.len()).position(|w| w.concat() == probe) {
+                    return buf[(x as u16, y)].fg;
+                }
+            }
+            panic!("probe text not found in rendered buffer");
+        };
+
+        let dark_fg = fg_of_probe(&mut a);
+        let mut m = super::super::settings::Menu::new();
+        m.on_key(ratatui::crossterm::event::KeyCode::Enter); // dark -> light
+        let light_fg = fg_of_probe(&mut a);
+        m.on_key(ratatui::crossterm::event::KeyCode::Enter); // restore dark
+
+        assert_ne!(dark_fg, light_fg);
+        assert_eq!(dark_fg, Color::Rgb(0xc0, 0xca, 0xf5));
+        assert_eq!(light_fg, Color::Rgb(0x2a, 0x4a, 0x96));
     }
 
     #[test]

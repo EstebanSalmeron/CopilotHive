@@ -42,7 +42,7 @@ pub fn list(root: &Path, cwd: &str) -> Vec<SessionInfo> {
             let field = |k: &str| {
                 yaml.lines()
                     .find_map(|l| l.strip_prefix(k)?.strip_prefix(':'))
-                    .map(|v| v.trim().trim_matches('"').to_string())
+                    .map(|v| v.trim().trim_matches(['"', '\'']).to_string())
             };
             (field("cwd")? == cwd).then(|| SessionInfo {
                 id: field("id").unwrap_or_else(|| d.file_name().to_string_lossy().into()),
@@ -65,10 +65,17 @@ pub fn load(events: &Path) -> Result<Vec<Entry>> {
     let mut out: Vec<Entry> = vec![];
     for line in BufReader::new(f).lines() {
         let line = line?;
-        // Cheap prefix check: snapshot events can be megabytes and are not needed.
-        let wanted = ["user.message", "assistant.message", "tool.execution_"]
-            .iter()
-            .any(|t| line.starts_with(&format!("{{\"type\":\"{t}")));
+        // Cheap pre-filter: snapshot events can be megabytes and are not needed.
+        let wanted = [
+            "\"type\":\"user.message\"",
+            "\"type\":\"assistant.message\"",
+            "\"type\":\"tool.execution_",
+            "\"type\": \"user.message\"",
+            "\"type\": \"assistant.message\"",
+            "\"type\": \"tool.execution_",
+        ]
+        .iter()
+        .any(|p| line.contains(p));
         if !wanted {
             continue;
         }
@@ -161,6 +168,34 @@ mod tests {
             Entry::Tool { ok: Some(true), .. },
             Entry::Agent(a),
         ] if u == "hola" && a == "listo"));
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn loads_when_type_is_not_first_key_and_strips_single_quotes() {
+        let root = std::env::temp_dir().join(format!("cockpit-hist-ord-{}", std::process::id()));
+        let d = root.join("s1");
+        fs::create_dir_all(&d).unwrap();
+        fs::write(
+            d.join("workspace.yaml"),
+            "id: 's1'\ncwd: '/p'\nname: 'Mi sesion'\nupdated_at: '2026-01-01'\n",
+        )
+        .unwrap();
+        let ev = concat!(
+            r#"{"id":"1","type":"user.message","data":{"content":"hola"}}"#,
+            "\n",
+            r#"{"id": "2", "type": "assistant.message", "data": {"content": "ok"}}"#,
+            "\n",
+        );
+        fs::write(d.join("events.jsonl"), ev).unwrap();
+        let l = list(&root, "/p");
+        assert_eq!(l.len(), 1);
+        assert_eq!(l[0].name, "Mi sesion");
+        let e = load(&l[0].events).unwrap();
+        assert!(matches!(&e[..], [
+            Entry::User(u),
+            Entry::Agent(a),
+        ] if u == "hola" && a == "ok"));
         fs::remove_dir_all(&root).unwrap();
     }
 }

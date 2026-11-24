@@ -10,7 +10,7 @@
 | Normal | `f` | `/fleet`: abre el prompt con `/fleet ` ya escrito; tras el objetivo, Copilot reparte el trabajo en subagentes paralelos (visibles en el dashboard `d`/`s`). `/fleet` es un comando que Copilot anuncia por ACP, así que se envía tal cual |
 | Normal | `Esc` | cancelar el turno en curso |
 | Normal | `↑↓` / `j k`, `PgUp/PgDn`, `Home/End` | scroll; `End` reanuda el autoscroll |
-| Normal | `d` | dashboard lateral: mostrar / ocultar |
+| Normal | `d` | dashboard: mostrar / ocultar |
 | Normal | `s` | vista completa de subagentes: abrir / cerrar |
 | Normal | `H` | historial: sesiones anteriores del proyecto (`↑↓` elegir, `Enter` abrir, `r` reanudar en una pestaña nueva (`session/load`), `Esc` volver/cerrar; en la conversación `↑↓ PgUp/PgDn Home/End`) |
 | Normal | `S` | ajustes: tema (oscuro/claro) e idioma (español/English); `↑↓` elegir, `Enter`/`←→` cambiar, `Esc` cerrar. Se guarda en `~/.config/copilot-cockpit/settings.toml` |

@@ -1,6 +1,7 @@
 //! Minimal ACP client: JSON-RPC over NDJSON against `copilot --acp --stdio`.
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
+use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -14,6 +15,10 @@ pub struct Client {
     next_id: u64,
     /// Commands from the UI, serviced while a request is pending or the client is idle.
     ctl: Option<(UnboundedReceiver<Ctl>, String)>,
+    /// In-flight fire-and-forget control requests (`id -> label`) so errors can be attributed.
+    ctl_reqs: HashMap<u64, String>,
+    /// Callback for unmatched JSON-RPC error responses (e.g. failed `Ctl::SetConfig`).
+    on_warn: Option<Box<dyn FnMut(String) + Send>>,
 }
 
 /// Picks the option to auto-approve a `session/request_permission` request.
@@ -152,6 +157,7 @@ impl Client {
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
+            .stderr(Stdio::null())
             .kill_on_drop(true)
             .spawn()
             .context("failed to spawn `copilot --acp --stdio`")?;
@@ -163,12 +169,43 @@ impl Client {
             stdout: BufReader::new(stdout).lines(),
             next_id: 0,
             ctl: None,
+            ctl_reqs: HashMap::new(),
+            on_warn: None,
         })
     }
 
     /// Services `rx` commands for `session_id` (see [`Ctl`]) from `request` and `idle`.
     pub fn on_ctl(&mut self, rx: UnboundedReceiver<Ctl>, session_id: String) {
         self.ctl = Some((rx, session_id));
+    }
+
+    /// Receives warnings for unmatched JSON-RPC error responses (e.g. `Ctl::SetConfig`).
+    pub fn on_warn(&mut self, cb: impl FnMut(String) + Send + 'static) {
+        self.on_warn = Some(Box::new(cb));
+    }
+
+    fn check_unmatched_response(&mut self, msg: &Value) {
+        if msg.get("method").is_some() || msg.get("id").is_none() {
+            return;
+        }
+        let label = msg
+            .get("id")
+            .and_then(Value::as_u64)
+            .and_then(|rid| self.ctl_reqs.remove(&rid));
+        let Some(err) = msg.get("error") else {
+            return;
+        };
+        let detail = err["message"]
+            .as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| err.to_string());
+        let text = match label {
+            Some(l) => format!("config {l}: {detail}"),
+            None => format!("ACP error: {detail}"),
+        };
+        if let Some(cb) = &mut self.on_warn {
+            cb(text);
+        }
     }
 
     async fn handle_ctl(&mut self, ctl: Ctl) -> Result<()> {
@@ -180,6 +217,7 @@ impl Client {
             Ctl::SetConfig { id, value } => {
                 // Fire and forget: the result arrives as a `config_option_update` notification.
                 self.next_id += 1;
+                self.ctl_reqs.insert(self.next_id, format!("{id}={value}"));
                 json!({"jsonrpc":"2.0","id":self.next_id,"method":"session/set_config_option",
                     "params":{"sessionId":sid,"configId":id,"value":value}})
             }
@@ -198,7 +236,13 @@ impl Client {
         };
         tokio::select! {
             l = self.stdout.next_line() => match l? {
-                Some(l) => dump(&l),
+                Some(l) => {
+                    dump(&l)?;
+                    if let Ok(msg) = serde_json::from_str::<Value>(&l) {
+                        self.check_unmatched_response(&msg);
+                    }
+                    Ok(())
+                }
                 None => bail!("copilot closed stdout"),
             },
             Some(c) = ctl => self.handle_ctl(c).await,
@@ -228,42 +272,74 @@ impl Client {
         let id = self.next_id;
         self.send(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
             .await?;
+        let mut queued: VecDeque<Value> = VecDeque::new();
         loop {
-            let ctl = async {
-                match &mut self.ctl {
-                    Some((rx, _)) => rx.recv().await,
-                    None => std::future::pending().await,
-                }
-            };
-            let line = tokio::select! {
-                r = tokio::time::timeout(idle, self.stdout.next_line()) => {
-                    match r.with_context(|| format!("timed out waiting for {method}"))?? {
-                        Some(l) => l,
-                        None => break,
+            let msg = if let Some(m) = queued.pop_front() {
+                m
+            } else {
+                let ctl = async {
+                    match &mut self.ctl {
+                        Some((rx, _)) => rx.recv().await,
+                        None => std::future::pending().await,
                     }
-                }
-                Some(c) = ctl => {
-                    self.handle_ctl(c).await?;
+                };
+                let line = tokio::select! {
+                    r = tokio::time::timeout(idle, self.stdout.next_line()) => {
+                        match r.with_context(|| format!("timed out waiting for {method}"))?? {
+                            Some(l) => l,
+                            None => break,
+                        }
+                    }
+                    Some(c) = ctl => {
+                        self.handle_ctl(c).await?;
+                        continue;
+                    }
+                };
+                dump(&line)?;
+                let Ok(msg) = serde_json::from_str::<Value>(&line) else {
                     continue;
-                }
-            };
-            dump(&line)?;
-            let Ok(msg) = serde_json::from_str::<Value>(&line) else {
-                continue;
+                };
+                msg
             };
             match (msg.get("method").and_then(Value::as_str), msg.get("id")) {
                 (Some(m), Some(rid)) => {
                     let reply = if m == "session/request_permission" {
-                        let (reply, rx) = oneshot::channel();
+                        let (reply, mut rx) = oneshot::channel();
                         on_perm(Perm {
                             params: msg["params"].clone(),
                             reply,
                         });
-                        match rx.await {
-                            Ok(Some(opt)) => {
-                                json!({"outcome":{"outcome":"selected","optionId":opt}})
+                        loop {
+                            tokio::select! {
+                                res = &mut rx => break match res {
+                                    Ok(Some(opt)) => {
+                                        json!({"outcome":{"outcome":"selected","optionId":opt}})
+                                    }
+                                    _ => json!({"outcome":{"outcome":"cancelled"}}),
+                                },
+                                line = self.stdout.next_line() => match line? {
+                                    Some(l) => {
+                                        dump(&l)?;
+                                        if let Ok(m) = serde_json::from_str::<Value>(&l) {
+                                            if m.get("method").is_none()
+                                                && m.get("id") == Some(&json!(id))
+                                            {
+                                                if let Some(err) = m.get("error") {
+                                                    bail!("{method} failed: {err}");
+                                                }
+                                                return Ok(m["result"].clone());
+                                            }
+                                            if m.get("method").is_none() && m.get("id").is_some() {
+                                                self.check_unmatched_response(&m);
+                                            }
+                                            if m.get("method").is_some() && m.get("id").is_some() {
+                                                queued.push_back(m);
+                                            }
+                                        }
+                                    }
+                                    None => bail!("copilot closed stdout while waiting for {method}"),
+                                },
                             }
-                            _ => json!({"outcome":{"outcome":"cancelled"}}),
                         }
                     } else {
                         // Unsupported client capability (fs, terminal...).
@@ -281,6 +357,7 @@ impl Client {
                     }
                     return Ok(msg["result"].clone());
                 }
+                (None, Some(_)) => self.check_unmatched_response(&msg),
                 _ => {}
             }
         }
@@ -318,6 +395,8 @@ mod tests {
             stdout: BufReader::new(stdout).lines(),
             next_id: 0,
             ctl: None,
+            ctl_reqs: HashMap::new(),
+            on_warn: None,
         }
     }
 
@@ -374,19 +453,80 @@ mod tests {
 
     #[tokio::test]
     async fn idle_timeout_resets_on_each_line() {
-        // Total time (~0.6s) exceeds the idle limit (0.4s), but no gap does.
-        let script =
-            r#"sleep 0.2; echo '{}'; sleep 0.2; echo '{}'; sleep 0.2; echo '{"id":1,"result":1}'"#;
+        // Total time (~1.0s) exceeds the idle limit (0.75s), but no gap (~0.1s) does.
+        let script = r#"for i in 1 2 3 4 5 6 7 8 9; do sleep 0.1; echo '{}'; done; sleep 0.1; echo '{"id":1,"result":1}'"#;
         let r = fake(script)
             .request(
                 "m",
                 json!({}),
-                Duration::from_millis(400),
+                Duration::from_millis(750),
                 &mut |_| Ok(()),
                 &mut |_| {},
             )
             .await;
         assert_eq!(r.unwrap(), json!(1));
+    }
+
+    #[tokio::test]
+    async fn child_exit_while_waiting_for_permission_returns_error() {
+        let script = r#"read req
+echo '{"id":9,"method":"session/request_permission","params":{"options":[{"optionId":"x","kind":"allow_once"}]}}'
+exit 0"#;
+        let mut _held: Option<Perm> = None;
+        let r = fake(script)
+            .request(
+                "m",
+                json!({}),
+                Duration::from_secs(5),
+                &mut |_| Ok(()),
+                &mut |p| _held = Some(p),
+            )
+            .await;
+        assert!(r.unwrap_err().to_string().contains("closed stdout"));
+    }
+
+    #[tokio::test]
+    async fn queues_second_permission_arriving_before_first_reply() {
+        let script = r#"read req
+printf '%s\n%s\n' \
+  '{"id":10,"method":"session/request_permission","params":{"options":[{"optionId":"o1","kind":"allow_once"}]}}' \
+  '{"id":11,"method":"session/request_permission","params":{"options":[{"optionId":"o2","kind":"allow_once"}]}}'
+read r1
+read r2
+printf '{"id":1,"result":[%s,%s]}\n' "$r1" "$r2""#;
+        let mut seen = vec![];
+        let mut count = 0usize;
+        let r = fake(script)
+            .request(
+                "m",
+                json!({}),
+                Duration::from_secs(5),
+                &mut |l| {
+                    seen.push(l.to_string());
+                    Ok(())
+                },
+                &mut |p| {
+                    count += 1;
+                    let opt = approve_option(&p.params).map(str::to_string);
+                    if count == 1 {
+                        // Delay first reply so stdout delivers the second permission while waiting.
+                        tokio::spawn(async move {
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                            let _ = p.reply.send(opt);
+                        });
+                    } else {
+                        let _ = p.reply.send(opt);
+                    }
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(count, 2);
+        assert_eq!(seen.len(), 3);
+        assert_eq!(r[0]["id"], json!(10));
+        assert_eq!(r[0]["result"]["outcome"]["optionId"], json!("o1"));
+        assert_eq!(r[1]["id"], json!(11));
+        assert_eq!(r[1]["result"]["outcome"]["optionId"], json!("o2"));
     }
 
     #[test]
@@ -517,5 +657,46 @@ echo "{\"id\":1,\"result\":[$r1,$r2]}""#;
         let v = r.unwrap();
         assert_eq!(v[0]["result"]["outcome"]["outcome"], "cancelled");
         assert_eq!(v[1]["error"]["code"], -32601);
+    }
+
+    #[tokio::test]
+    async fn unmatched_error_emits_warning_for_set_config_and_idle() {
+        // Request id 1 is the active request; id 2 is Ctl::SetConfig (fails); id 99 is unmatched.
+        let script = r#"read req
+read ctl
+echo '{"id":2,"error":{"code":-32602,"message":"unknown model"}}'
+echo '{"id":1,"result":{"ok":true}}'
+echo '{"id":99,"error":{"code":-32000,"message":"late failure"}}'"#;
+        let mut c = fake(script);
+        let (ctl_tx, ctl_rx) = tokio::sync::mpsc::unbounded_channel();
+        c.on_ctl(ctl_rx, "s1".into());
+        let (warn_tx, mut warn_rx) = tokio::sync::mpsc::unbounded_channel();
+        c.on_warn(move |w| {
+            let _ = warn_tx.send(w);
+        });
+        ctl_tx
+            .send(Ctl::SetConfig {
+                id: "model".into(),
+                value: "bad-model".into(),
+            })
+            .unwrap();
+        let r = c
+            .request(
+                "m",
+                json!({}),
+                Duration::from_secs(5),
+                &mut |_| Ok(()),
+                &mut |_| {},
+            )
+            .await
+            .unwrap();
+        assert_eq!(r, json!({"ok": true}));
+        assert_eq!(
+            warn_rx.try_recv().unwrap(),
+            "config model=bad-model: unknown model"
+        );
+        // Unmatched error arriving while idle is also surfaced.
+        c.idle(&mut |_| Ok(())).await.unwrap();
+        assert_eq!(warn_rx.try_recv().unwrap(), "ACP error: late failure");
     }
 }

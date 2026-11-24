@@ -153,8 +153,13 @@ pub fn set_model(path: &Path, agent: &str, model: &str) -> Result<()> {
     if text.ends_with('\n') {
         out.push('\n');
     }
+    if let Some(dir) = path.parent()
+        && !dir.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    }
     // Write beside the target and rename so a crash never leaves a half-written file.
-    let tmp = path.with_extension("json.cockpit-tmp");
+    let tmp = path.with_extension(format!("json.cockpit-tmp-{}", std::process::id()));
     std::fs::write(&tmp, out)?;
     if let Ok(meta) = std::fs::metadata(path) {
         std::fs::set_permissions(&tmp, meta.permissions())?;
@@ -239,5 +244,15 @@ mod tests {
         assert!(set_model(&path, "a", "b").is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ // comment\n}");
         std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn set_model_creates_missing_parent_directory() {
+        let dir = std::env::temp_dir().join(format!("cockpit-newdir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("nested/settings.json");
+        set_model(&path, "explore", "m1").unwrap();
+        assert_eq!(load_models(&path)["explore"], "m1");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

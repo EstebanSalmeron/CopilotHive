@@ -20,11 +20,11 @@ Spike cerrado (conclusiones en `docs/spike-acp.md`): ACP para control (prompts, 
 MVP: `copilot-cockpit tui [--config FILE]` (por defecto `~/.config/copilot-cockpit/projects.toml`,
 con `[[projects]]` `name`/`path`): una sesión ACP por proyecto, pestañas con transcripción, prompts,
 permisos (`y`/`n`) y dashboard de agentes (`d`). `copilot-cockpit spike ...` conserva el spike.
-Teclas completas en `docs/tui-keys.md`. UI en `src/tui/{mod,theme,widgets,input,markdown}.rs`.
+Teclas completas en `docs/tui-keys.md`. UI en `src/tui/{mod,theme,widgets,modals,session,input,markdown,dashboard,history,settings}.rs`.
 
 ## Stack
 
-- Rust estable, edición 2021+, `tokio` para async, `serde`/`serde_json`, `anyhow` o `thiserror`.
+- Rust estable, edición 2024, `tokio` para async, `serde`/`serde_json`, `anyhow` o `thiserror`.
 - Crate `agent-client-protocol` si encaja; si no, JSON-RPC mínimo propio.
 - UI: `ratatui` (reexporta `crossterm`); `serde` + `toml` para la config. Sin `notify`: `events.jsonl` se sondea cada 1 s.
 

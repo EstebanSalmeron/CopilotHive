@@ -107,11 +107,15 @@ impl Agent {
         }
     }
 
-    /// Final duration if known, else live time since start.
+    /// Accumulated duration plus live time if currently running.
     pub fn elapsed(&self) -> Option<Duration> {
-        self.duration_ms
-            .map(Duration::from_millis)
-            .or_else(|| self.started_at.map(|t| t.elapsed()))
+        match (self.duration_ms, self.started_at) {
+            (None, None) => None,
+            (ms, start) => Some(
+                Duration::from_millis(ms.unwrap_or(0))
+                    + start.map_or(Duration::ZERO, |t| t.elapsed()),
+            ),
+        }
     }
 }
 
@@ -184,13 +188,16 @@ impl Tree {
             Some("assistant.turn_start") if agent_id.is_none() => {
                 let r = self.root();
                 r.status = Status::Running;
-                r.duration_ms = None;
                 r.started_at = Some(Instant::now());
             }
             Some("assistant.turn_end") if agent_id.is_none() => {
                 let r = self.root();
                 r.status = Status::Completed;
                 r.current_tool = None;
+                if let Some(t) = r.started_at.take() {
+                    let add = t.elapsed().as_millis() as u64;
+                    r.duration_ms = Some(r.duration_ms.unwrap_or(0) + add);
+                }
             }
             Some("tool.execution_start") => {
                 if let Some(a) = self.agent(agent_id) {
@@ -250,7 +257,8 @@ impl Tree {
                     if let Some(m) = data["model"].as_str() {
                         a.model = Some(m.to_string());
                     }
-                    a.duration_ms = data["durationMs"].as_u64();
+                    let live = a.started_at.take().map(|t| t.elapsed().as_millis() as u64);
+                    a.duration_ms = data["durationMs"].as_u64().or(live);
                     if let Some(n) = data["totalToolCalls"].as_u64() {
                         a.tool_calls = n;
                     }
@@ -400,6 +408,24 @@ garbage
         assert_eq!(e.last_model.as_deref(), Some("m-a2"));
         assert!(e.time >= Duration::from_secs(1));
         assert_eq!(s[1].last_status, Some(Status::Cancelled));
+    }
+
+    #[test]
+    fn main_elapsed_stops_on_turn_end_and_accumulates() {
+        let mut t = Tree::default();
+        t.apply(r#"{"type":"assistant.turn_start","data":{}}"#);
+        std::thread::sleep(Duration::from_millis(15));
+        t.apply(r#"{"type":"assistant.turn_end","data":{}}"#);
+        let d1 = t.agents[0].elapsed().unwrap();
+        assert!(d1 >= Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(20));
+        assert_eq!(t.agents[0].elapsed(), Some(d1));
+
+        t.apply(r#"{"type":"assistant.turn_start","data":{}}"#);
+        std::thread::sleep(Duration::from_millis(15));
+        t.apply(r#"{"type":"assistant.turn_end","data":{}}"#);
+        let d2 = t.agents[0].elapsed().unwrap();
+        assert!(d2 > d1);
     }
 
     #[test]

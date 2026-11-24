@@ -10,6 +10,8 @@ mod dashboard;
 mod history;
 mod input;
 mod markdown;
+mod modals;
+mod session;
 mod settings;
 mod theme;
 mod widgets;
@@ -17,16 +19,16 @@ mod widgets;
 use crate::acp::{self, ConfigOpt, Ctl, Perm, Update};
 use crate::agents::{self, AgentDef};
 use crate::config::Project;
-use crate::events::{self, Status, Tree};
+use crate::events::{Status, Tree};
 use anyhow::{Context, Result, bail};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
     self, Event as Term, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
 };
 use ratatui::text::Line;
-use serde_json::json;
+use session::spawn_tab;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -41,6 +43,7 @@ enum Msg {
     Done(String),
     Warn(String),
     Failed(String),
+    History(history::Loaded),
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -109,6 +112,7 @@ impl Scroll {
 struct Cache {
     width: usize,
     rev: u64,
+    light: bool,
     lines: Vec<Line<'static>>,
 }
 
@@ -374,6 +378,12 @@ pub struct App {
 
 impl App {
     fn on_msg(&mut self, id: usize, m: Msg) {
+        if let Msg::History(ev) = m {
+            if let Some(h) = &mut self.history {
+                h.on_loaded(ev);
+            }
+            return;
+        }
         // Late messages from a closed tab find no id and are dropped.
         let Some(t) = self.tabs.iter_mut().find(|t| t.id == id) else {
             return;
@@ -397,6 +407,7 @@ impl App {
             Msg::Session(s) => t.sid = Some(s),
             Msg::Done(reason) => {
                 t.busy = false;
+                t.perm = None;
                 if reason == "cancelled" {
                     t.push(Item::Note(
                         settings::tr("turno cancelado", "turn cancelled").into(),
@@ -409,6 +420,7 @@ impl App {
                 t.busy = false;
                 t.perm = None;
             }
+            Msg::History(_) => {}
         }
     }
 
@@ -460,6 +472,14 @@ impl App {
                 history::Action::Resume(sid, title) => {
                     self.history = None;
                     self.resume(sid, &title);
+                }
+                history::Action::Load(req, title, path) => {
+                    let tx = self.tx.clone();
+                    tokio::task::spawn_blocking(move || {
+                        let res = crate::history::load(&path).map_err(|e| format!("{e:#}"));
+                        let _ =
+                            tx.send((0, Msg::History(history::Loaded::Session(req, title, res))));
+                    });
                 }
             }
             return false;
@@ -558,7 +578,16 @@ impl App {
             KeyCode::Char('e') => self.open_selector(false),
             KeyCode::Char('S') => self.settings = Some(settings::Menu::new()),
             KeyCode::Char('H') => {
-                self.history = Some(history::History::open(&t.name, &t.cwd));
+                let (h, req) = history::History::open(&t.name);
+                let cwd = t.cwd.clone();
+                let tx = self.tx.clone();
+                self.history = Some(h);
+                tokio::task::spawn_blocking(move || {
+                    let sessions = crate::history::root()
+                        .map(|r| crate::history::list(&r, &cwd))
+                        .unwrap_or_default();
+                    let _ = tx.send((0, Msg::History(history::Loaded::List(req, sessions))));
+                });
             }
             KeyCode::Char('?') => self.help = true,
             KeyCode::Char('!') => return self.jump_attention(),
@@ -750,154 +779,6 @@ fn assign_model(t: &mut Tab, agent: &str, model: &str, path: Option<PathBuf>) {
         ),
     };
     t.push(Item::Note(note));
-}
-
-async fn run_project(
-    idx: usize,
-    cwd: String,
-    resume: Option<String>,
-    mut prompts: UnboundedReceiver<String>,
-    ctl: UnboundedReceiver<Ctl>,
-    tx: Tx,
-) -> Result<()> {
-    let short = Duration::from_secs(30);
-    let long = Duration::from_secs(300);
-    let mut dump = |_: &str| Ok(());
-    let mut on_perm = |p: Perm| {
-        let _ = tx.send((idx, Msg::Perm(p)));
-    };
-    let mut c = acp::Client::spawn(&cwd)?;
-    c.request(
-        "initialize",
-        json!({"protocolVersion":1,"clientCapabilities":{}}),
-        short,
-        &mut dump,
-        &mut on_perm,
-    )
-    .await?;
-    let (s, sid) = match resume {
-        Some(sid) => {
-            // The agent replays the whole conversation as updates before answering.
-            let mut replay = |l: &str| {
-                if let Some(u) = acp::parse_update(l) {
-                    let _ = tx.send((idx, Msg::Update(u)));
-                }
-                Ok(())
-            };
-            let s = c
-                .request(
-                    "session/load",
-                    json!({"sessionId":sid,"cwd":cwd,"mcpServers":[]}),
-                    short,
-                    &mut replay,
-                    &mut on_perm,
-                )
-                .await?;
-            (s, sid)
-        }
-        None => {
-            let s = c
-                .request(
-                    "session/new",
-                    json!({"cwd":cwd,"mcpServers":[]}),
-                    short,
-                    &mut dump,
-                    &mut on_perm,
-                )
-                .await?;
-            let sid = s["sessionId"].as_str().context("no sessionId")?.to_string();
-            (s, sid)
-        }
-    };
-    let _ = tx.send((idx, Msg::Session(sid.clone())));
-    c.on_ctl(ctl, sid.clone());
-    let opts = acp::parse_config_options(&s["configOptions"]);
-    let _ = tx.send((idx, Msg::Update(Update::Config(opts))));
-    // Aborting run_project does not stop its children; the guard aborts watch on drop.
-    let _watch = AbortOnDrop(tokio::spawn(watch(idx, sid.clone(), tx.clone())));
-    let _ = tx.send((idx, Msg::Ready));
-    let mut on_line = |l: &str| {
-        if let Some(u) = acp::parse_update(l) {
-            let _ = tx.send((idx, Msg::Update(u)));
-        }
-        Ok(())
-    };
-    loop {
-        tokio::select! {
-            text = prompts.recv() => {
-                let Some(text) = text else { return Ok(()) };
-                let r = c
-                    .request(
-                        "session/prompt",
-                        json!({"sessionId":sid,"prompt":[{"type":"text","text":text}]}),
-                        long,
-                        &mut on_line,
-                        &mut on_perm,
-                    )
-                    .await?;
-                let reason = r["stopReason"].as_str().unwrap_or("?").to_string();
-                let _ = tx.send((idx, Msg::Done(reason)));
-            }
-            r = c.idle(&mut on_line) => r?,
-        }
-    }
-}
-
-struct AbortOnDrop(tokio::task::JoinHandle<()>);
-
-impl Drop for AbortOnDrop {
-    fn drop(&mut self) {
-        self.0.abort();
-    }
-}
-
-/// Polls events.jsonl once a second; polling avoids a file-watcher dependency.
-async fn watch(idx: usize, sid: String, tx: Tx) {
-    let Some(home) = std::env::var_os("HOME") else {
-        return;
-    };
-    let path = PathBuf::from(home)
-        .join(".copilot/session-state")
-        .join(sid)
-        .join("events.jsonl");
-    let mut offset = 0;
-    loop {
-        if let Ok(mut f) = std::fs::File::open(&path) {
-            match events::read_new(&mut f, &mut offset) {
-                Ok(lines) if !lines.is_empty() => {
-                    let _ = tx.send((idx, Msg::Lines(lines)));
-                }
-                Ok(_) => {}
-                Err(e) => {
-                    let _ = tx.send((idx, Msg::Warn(format!("events.jsonl: {e:#}"))));
-                }
-            }
-        }
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    }
-}
-
-/// Creates a tab and starts its ACP session (`session/new`, or `session/load` when resuming).
-fn spawn_tab(i: usize, name: String, cwd: String, resume: Option<String>, tx: &Tx) -> Tab {
-    let (ptx, prx) = unbounded_channel();
-    let (ctl, crx) = unbounded_channel();
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    let defs = agents::discover(Path::new(&cwd), home.as_deref());
-    let loaded = agents::settings_path()
-        .as_deref()
-        .map(agents::load_models)
-        .unwrap_or_default();
-    let mut tab = Tab::new(name, ptx, ctl, defs, loaded);
-    tab.cwd = cwd.clone();
-    let tx2 = tx.clone();
-    let task = tokio::spawn(async move {
-        if let Err(e) = run_project(i, cwd, resume, prx, crx, tx2.clone()).await {
-            let _ = tx2.send((i, Msg::Failed(format!("{e:#}"))));
-        }
-    });
-    tab.id = i;
-    tab.task = Some(task.abort_handle());
-    tab
 }
 
 pub async fn run(projects: Vec<Project>) -> Result<()> {
