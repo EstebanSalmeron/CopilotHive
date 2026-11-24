@@ -15,7 +15,7 @@ use std::time::Duration;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 const MIN_W: u16 = 60;
-const MIN_H: u16 = 17;
+const MIN_H: u16 = 18;
 const SIDEBAR_W: u16 = 50;
 const SIDEBAR_MIN_TOTAL: u16 = 100;
 
@@ -133,8 +133,9 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     let t = &mut app.tabs[app.current];
     let in_w = area.width.saturating_sub(2) as usize;
     let in_rows = t.editor.layout(in_w).0.len().clamp(1, 6) as u16;
-    let [_, info, body, input, status] = Layout::vertical([
+    let [_, _, info, body, input, status] = Layout::vertical([
         Constraint::Length(5),
+        Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Min(3),
         Constraint::Length(in_rows + 2),

@@ -1,6 +1,6 @@
 # TUI: teclas
 
-`copilot-cockpit tui [--config FILE]`. Terminal mínima 60x17; el panel de agentes se oculta por debajo de 100 columnas.
+`copilot-cockpit tui [--config FILE]`. Terminal mínima 60x18; el panel de agentes se oculta por debajo de 100 columnas.
 
 | Modo | Tecla | Acción |
 |------|-------|--------|
