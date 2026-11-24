@@ -260,14 +260,17 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
     );
 }
 
-/// 3-row robot: eyes scan while agents work, blink when idle.
+/// Eyes are closed for 2 ticks every 40 (idle) or 15 (working).
+pub(super) fn eyes_closed(tick: u64, working: bool) -> bool {
+    tick % if working { 15 } else { 40 } < 2
+}
+
+/// 3-row robot: fixed eyes that blink; working = color + blinking antenna.
 fn robot(tick: u64, working: bool) -> Vec<Line<'static>> {
-    let eyes = if working {
-        ["◉ ◉", "◉  ◉", "◉ ◉", "◎ ◎"][(tick / 3 % 4) as usize]
-    } else if tick % 40 < 3 {
+    let eyes = if eyes_closed(tick, working) {
         "- -"
     } else {
-        "• •"
+        "◉ ◉"
     };
     let ant = if working && (tick / 2).is_multiple_of(2) {
         "*"
@@ -1042,6 +1045,13 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use serde_json::json;
+
+    #[test]
+    fn blink_is_brief_and_faster_when_working() {
+        let closed = |w| (0..120).filter(|&t| eyes_closed(t, w)).count();
+        assert_eq!(closed(false), 6);
+        assert_eq!(closed(true), 16);
+    }
 
     fn screen(app: &mut App, w: u16, h: u16) -> String {
         let mut term = match Terminal::new(TestBackend::new(w, h)) {

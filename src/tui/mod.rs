@@ -920,8 +920,10 @@ async fn event_loop(
         if last_tick.elapsed() >= TICK {
             last_tick = Instant::now();
             app.tick += 1;
-            // The idle robot blinks at ticks 0..3 of every 40.
-            dirty |= app.animating() || app.tick % 40 < 4;
+            // Idle blink: redraw when the eyes close and when they reopen.
+            dirty |= app.animating()
+                || widgets::eyes_closed(app.tick, false)
+                || widgets::eyes_closed(app.tick - 1, false);
         }
         if std::mem::take(&mut dirty) {
             term.draw(|f| widgets::draw(app, f))?;
