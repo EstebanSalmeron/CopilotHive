@@ -935,7 +935,8 @@ async fn event_loop(
             // Idle blink: redraw when the eyes close and when they reopen.
             dirty |= app.animating()
                 || widgets::eyes_closed(app.tick, false)
-                || widgets::eyes_closed(app.tick - 1, false);
+                || widgets::eyes_closed(app.tick - 1, false)
+                || widgets::quip(app.tick).is_some() != widgets::quip(app.tick - 1).is_some();
         }
         if std::mem::take(&mut dirty) {
             term.draw(|f| widgets::draw(app, f))?;
@@ -1120,7 +1121,7 @@ mod tests {
     #[tokio::test]
     async fn open_modal_creates_and_focuses_new_tab() {
         let dir =
-            std::env::temp_dir().join(format!("copilot-cockpit-open-tab-{}", std::process::id()));
+            std::env::temp_dir().join(format!("copilot-hive-open-tab-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let canonical = std::fs::canonicalize(&dir).unwrap();

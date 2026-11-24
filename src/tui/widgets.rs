@@ -234,9 +234,23 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
     let blk = block(Line::default(), c_border());
     let inner = blk.inner(area);
     f.render_widget(blk, area);
-    let [left, right] =
-        Layout::horizontal([Constraint::Length(11), Constraint::Min(10)]).areas(inner);
+    let logo_lines = logo();
+    let logo_w = logo_lines.iter().map(Line::width).max().unwrap_or(0) as u16;
+    let logo_w = if inner.width >= logo_w + 11 + 50 {
+        logo_w
+    } else {
+        0
+    };
+    let [left, right, logo_a] = Layout::horizontal([
+        Constraint::Length(11),
+        Constraint::Min(10),
+        Constraint::Length(logo_w),
+    ])
+    .areas(inner);
     f.render_widget(Paragraph::new(robot(tick, working > 0)), left);
+    if logo_w > 0 {
+        f.render_widget(Paragraph::new(logo_lines), logo_a);
+    }
     let summary = Line::from(vec![
         Span::styled(
             tr_fmt!("{} proyectos", "{} projects", app.tabs.len()),
@@ -255,14 +269,83 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
         Span::styled(" · ", fg(c_border())),
         Span::styled(cost(credits), fg(c_orange())),
     ]);
-    let title = Line::from(vec![
-        Span::styled("◆ COPILOT COCKPIT", bold(c_accent())),
-        Span::styled(tr("  centro de mando", "  command center"), fg(c_dim())),
-    ]);
+    let title = match quip(tick) {
+        Some(q) => Line::from(vec![
+            Span::styled("◀ ", fg(c_attention())),
+            Span::styled(format!("“{q}”"), Style::new().fg(c_attention()).italic()),
+        ]),
+        None => Line::styled(tr("◆ centro de mando", "◆ command center"), fg(c_dim())),
+    };
     f.render_widget(
         Paragraph::new(vec![title, summary, Line::from(spans)]),
         right,
     );
+}
+
+const QUIPS: [(&str, &str); 8] = [
+    (
+        "Yo no compilo, yo solo opino.",
+        "I don't compile, I just opine.",
+    ),
+    (
+        "Otro café y refactorizo el mundo.",
+        "One more coffee and I'll refactor the world.",
+    ),
+    (
+        "En mi máquina funcionaba. Soy la máquina.",
+        "Works on my machine. I am the machine.",
+    ),
+    (
+        "Bip bup. Eso era un bug o una feature?",
+        "Beep boop. Was that a bug or a feature?",
+    ),
+    (
+        "Los tokens no crecen en los árboles...",
+        "Tokens don't grow on trees...",
+    ),
+    (
+        "Veo subagentes por todas partes.",
+        "I see subagents everywhere.",
+    ),
+    (
+        "Prometo no borrar producción. Hoy.",
+        "I promise not to delete prod. Today.",
+    ),
+    (
+        "Tranqui, yo vigilo los permisos.",
+        "Relax, I'm watching the permissions.",
+    ),
+];
+const QUIP_PERIOD: u64 = 400;
+const QUIP_SHOWN: u64 = 100;
+
+/// Joke shown in the robot's bubble for 10 s every 40 s (ticks are 100 ms).
+pub(super) fn quip(tick: u64) -> Option<&'static str> {
+    if tick % QUIP_PERIOD >= QUIP_SHOWN {
+        return None;
+    }
+    let (es, en) = QUIPS[(tick / QUIP_PERIOD) as usize % QUIPS.len()];
+    Some(tr(es, en))
+}
+
+/// Right-aligned header badge: "COPILOT HIVE" in box letters between honeycomb strips.
+fn logo() -> Vec<Line<'static>> {
+    const TITLE: [&str; 3] = [
+        "╔═╗╔═╗╔═╗╦╦  ╔═╗╔╦╗  ╦ ╦╦╦  ╦╔═╗",
+        "║  ║ ║╠═╝║║  ║ ║ ║   ╠═╣║╚╗╔╝║╣ ",
+        "╚═╝╚═╝╩  ╩╩═╝╚═╝ ╩   ╩ ╩╩ ╚╝ ╚═╝",
+    ];
+    const LEFT: [&str; 3] = ["⬢⬡⬢⬡ ", "⬡⬢⬡⬢ ", "⬢⬡⬢⬡ "];
+    const RIGHT: [&str; 3] = [" ⬡⬢⬡⬢  ", " ⬢⬡⬢⬡  ", " ⬡⬢⬡⬢  "];
+    (0..3)
+        .map(|i| {
+            Line::from(vec![
+                Span::styled(LEFT[i], fg(c_orange())),
+                Span::styled(TITLE[i], bold(c_accent())),
+                Span::styled(RIGHT[i], fg(c_orange())),
+            ])
+        })
+        .collect()
 }
 
 /// Eyes are closed for 2 ticks every 40 (idle) or 15 (working).
@@ -419,10 +502,7 @@ fn welcome() -> Vec<Line<'static>> {
     };
     vec![
         Line::styled(
-            tr(
-                "  Bienvenido a copilot-cockpit",
-                "  Welcome to copilot-cockpit",
-            ),
+            tr("  Bienvenido a copilot-hive", "  Welcome to copilot-hive"),
             bold(c_purple()),
         ),
         Line::default(),
@@ -569,7 +649,10 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
             ),
         ];
         if total > 0.0 {
-            head.push(Span::styled(format!("  {total:.1} cr"), fg(c_orange())));
+            head.push(Span::styled(
+                format!("  {total:.1} cr · ${:.3}", total * 0.01),
+                fg(c_orange()),
+            ));
         }
         out.push(Line::from(head));
         if t.perm.is_some() {
@@ -590,7 +673,11 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
             let pad = if sub { "   " } else { "" };
             let mut text = format!(" {branch}{pad} {icon} {}", a.name);
             if a.tokens.nano_aiu > 0 {
-                text.push_str(&format!(" {:.1} cr", a.tokens.credits()));
+                text.push_str(&format!(
+                    " {:.1} cr · ${:.3}",
+                    a.tokens.credits(),
+                    a.tokens.credits() * 0.01
+                ));
             }
             out.push(Line::styled(trunc(&text, w), fg(c)));
             if let (Some(tool), Status::Running) = (&a.current_tool, a.status) {

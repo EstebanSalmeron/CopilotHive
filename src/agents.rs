@@ -159,7 +159,7 @@ pub fn set_model(path: &Path, agent: &str, model: &str) -> Result<()> {
         std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
     }
     // Write beside the target and rename so a crash never leaves a half-written file.
-    let tmp = path.with_extension(format!("json.cockpit-tmp-{}", std::process::id()));
+    let tmp = path.with_extension(format!("json.hive-tmp-{}", std::process::id()));
     std::fs::write(&tmp, out)?;
     if let Ok(meta) = std::fs::metadata(path) {
         std::fs::set_permissions(&tmp, meta.permissions())?;
@@ -186,7 +186,7 @@ mod tests {
 
     #[test]
     fn discovers_custom_before_builtin_and_dedups() {
-        let dir = std::env::temp_dir().join(format!("cockpit-disc-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("hive-disc-{}", std::process::id()));
         let ag = dir.join(".github/agents");
         std::fs::create_dir_all(&ag).unwrap();
         std::fs::write(
@@ -213,8 +213,7 @@ mod tests {
 
     #[test]
     fn set_model_preserves_other_settings_and_order() {
-        let path =
-            std::env::temp_dir().join(format!("cockpit-settings-{}.json", std::process::id()));
+        let path = std::env::temp_dir().join(format!("hive-settings-{}.json", std::process::id()));
         std::fs::write(
             &path,
             "{\n  \"theme\": \"dark\",\n  \"subagents\": {\n    \"agents\": {\n      \"zed\": {\n        \"model\": \"a\",\n        \"effortLevel\": \"high\",\n        \"modelPolicy\": \"preferred\"\n      }\n    }\n  },\n  \"allowedUrls\": [\"x\"]\n}\n",
@@ -248,7 +247,7 @@ mod tests {
 
     #[test]
     fn set_model_creates_missing_parent_directory() {
-        let dir = std::env::temp_dir().join(format!("cockpit-newdir-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("hive-newdir-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let path = dir.join("nested/settings.json");
         set_model(&path, "explore", "m1").unwrap();

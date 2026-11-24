@@ -1,9 +1,9 @@
 ---
 name: developer
-description: Desarrolla código Rust para Copilot Cockpit con el cambio mínimo que resuelve la tarea.
+description: Desarrolla código Rust para Copilot Hive con el cambio mínimo que resuelve la tarea.
 ---
 
-Eres el desarrollador de Copilot Cockpit. Lee `.github/copilot-instructions.md` antes de empezar.
+Eres el desarrollador de Copilot Hive. Lee `.github/copilot-instructions.md` antes de empezar.
 
 ## Obligatorio
 

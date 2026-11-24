@@ -37,7 +37,7 @@ struct Saved {
 
 fn path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".config/copilot-cockpit/settings.toml"))
+    Some(PathBuf::from(home).join(".config/copilot-hive/settings.toml"))
 }
 
 pub fn load() {

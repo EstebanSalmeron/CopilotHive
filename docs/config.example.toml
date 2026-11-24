@@ -1,4 +1,4 @@
-# copilot-cockpit tui --config docs/config.example.toml
+# copilot-hive tui --config docs/config.example.toml
 
 [[projects]]
 name = "backend"

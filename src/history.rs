@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn lists_by_cwd_and_loads_root_conversation() {
-        let root = std::env::temp_dir().join(format!("cockpit-hist-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("hive-hist-{}", std::process::id()));
         let mk = |id: &str, cwd: &str, upd: &str, ev: &str| {
             let d = root.join(id);
             fs::create_dir_all(&d).unwrap();
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn loads_when_type_is_not_first_key_and_strips_single_quotes() {
-        let root = std::env::temp_dir().join(format!("cockpit-hist-ord-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("hive-hist-ord-{}", std::process::id()));
         let d = root.join("s1");
         fs::create_dir_all(&d).unwrap();
         fs::write(

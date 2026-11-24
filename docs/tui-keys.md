@@ -1,6 +1,6 @@
 # TUI: teclas
 
-`copilot-cockpit tui [--config FILE]`. Terminal mínima 60x18; el panel de agentes se oculta por debajo de 100 columnas.
+`copilot-hive tui [--config FILE]`. Terminal mínima 60x18; el panel de agentes se oculta por debajo de 100 columnas.
 
 | Modo | Tecla | Acción |
 |------|-------|--------|
@@ -20,7 +20,7 @@
 | Abrir | `.` | mostrar / ocultar archivos y carpetas ocultos |
 | Abrir | `~` | ir a `$HOME` |
 | Abrir | `o` / `Esc` | abrir la carpeta actual en una nueva pestaña / cerrar |
-| Normal | `S` | ajustes: tema (oscuro/claro) e idioma (español/English); `↑↓` elegir, `Enter`/`←→` cambiar, `Esc` cerrar. Se guarda en `~/.config/copilot-cockpit/settings.toml` |
+| Normal | `S` | ajustes: tema (oscuro/claro) e idioma (español/English); `↑↓` elegir, `Enter`/`←→` cambiar, `Esc` cerrar. Se guarda en `~/.config/copilot-hive/settings.toml` |
 | Normal | `A` | allow all on/off (pide confirmación al activar; también en el modal de permiso) |
 | Normal | `m` / `e` | selector de modelo / reasoning effort de la sesión (`session/set_config_option`) |
 | Subagentes | `Enter` | abre el prompt con «Usa el subagente <nombre> para: » (si el editor está vacío) para lanzar el agente elegido |

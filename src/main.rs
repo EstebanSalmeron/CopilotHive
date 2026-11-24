@@ -15,7 +15,7 @@ one lists the files in the top-level directory, the other lists the files under 
 Then summarize both results in one line.";
 
 const TIMEOUT: Duration = Duration::from_secs(300);
-const USAGE: &str = "usage: copilot-cockpit tui [--config FILE]\n       copilot-cockpit spike [--cwd DIR] [--out FILE] [PROMPT]";
+const USAGE: &str = "usage: copilot-hive tui [--config FILE]\n       copilot-hive spike [--cwd DIR] [--out FILE] [PROMPT]";
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<()> {

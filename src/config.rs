@@ -26,7 +26,7 @@ struct Config {
 
 pub fn default_path() -> Result<PathBuf> {
     let home = std::env::var_os("HOME").context("HOME is not set")?;
-    Ok(PathBuf::from(home).join(".config/copilot-cockpit/projects.toml"))
+    Ok(PathBuf::from(home).join(".config/copilot-hive/projects.toml"))
 }
 
 pub fn parse(text: &str) -> Result<Vec<Project>> {
