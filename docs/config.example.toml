@@ -1,0 +1,16 @@
+# copilot-cockpit tui --config docs/config.example.toml
+
+[[projects]]
+name = "backend"
+path = "/ruta/absoluta/al/proyecto"
+# Aprobar todos los permisos de esta sesión desde el arranque (peligroso). Por defecto false.
+allow_all = false
+# Modelo de la sesión al arrancar (id tal como lo lista Copilot).
+model = "claude-sonnet-4.5"
+
+# Modelos obligatorios de subagentes. Se escriben en ~/.copilot/settings.json
+# (subagents.agents.<nombre>, modelPolicy "required"): son GLOBALES del usuario,
+# no solo de este proyecto; si dos proyectos chocan, gana el último.
+[projects.agent_models]
+explore = "claude-haiku-4.5"
+code-review = "gpt-5.3-codex"
