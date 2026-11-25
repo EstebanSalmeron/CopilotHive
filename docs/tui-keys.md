@@ -21,6 +21,7 @@
 | Abrir | `~` | ir a `$HOME` |
 | Abrir | `o` / `Esc` | abrir la carpeta actual en una nueva pestaña / cerrar |
 | Normal | `S` | ajustes: tema (oscuro/claro) e idioma (español/English); `↑↓` elegir, `Enter`/`←→` cambiar, `Esc` cerrar. Se guarda en `~/.config/copilot-hive/settings.toml` |
+| Normal | `M` | servidores MCP del proyecto: `↑↓` elegir, `Espacio` activar/desactivar, `Enter` aplicar, `Esc` cancelar. Se guarda por carpeta en `~/.config/copilot-hive/mcp.toml` y se aplica reiniciando el proceso ACP con `--disable-mcp-server <n>` y recargando la sesión (`session/load`); allow all y modelo se restablecen. Lista los de `~/.copilot/mcp-config.json`, `.mcp.json` y `.github/mcp.json` |
 | Normal | `A` | allow all on/off (pide confirmación al activar; también en el modal de permiso) |
 | Normal | `m` / `e` | selector de modelo / reasoning effort de la sesión (`session/set_config_option`) |
 | Subagentes | `Enter` | abre el prompt con «Usa el subagente <nombre> para: » (si el editor está vacío) para lanzar el agente elegido |

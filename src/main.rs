@@ -58,7 +58,7 @@ async fn spike(mut args: impl Iterator<Item = String>) -> Result<()> {
             .reply
             .send(acp::approve_option(&p.params).map(str::to_string));
     };
-    let mut c = acp::Client::spawn(&cwd)?;
+    let mut c = acp::Client::spawn(&cwd, &[])?;
     c.request(
         "initialize",
         json!({"protocolVersion":1,"clientCapabilities":{}}),

@@ -191,6 +191,9 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     if let Some(m) = &app.settings {
         m.draw(f, area);
     }
+    if let Some(m) = &app.mcp {
+        m.draw(f, area);
+    }
     if help {
         modals::draw_help(f, area);
     }
@@ -532,6 +535,10 @@ fn welcome() -> Vec<Line<'static>> {
             "S",
             tr("ajustes: tema e idioma", "settings: theme and language"),
         ),
+        k(
+            "M",
+            tr("servidores MCP del proyecto", "project MCP servers"),
+        ),
     ]
 }
 
@@ -798,6 +805,7 @@ fn draw_status(
             ("d", "dashboard"),
             ("o", tr("abrir", "open")),
             ("S", tr("ajustes", "settings")),
+            ("M", "MCP"),
             ("H", tr("historial", "history")),
             ("m", tr("modelo", "model")),
             (
