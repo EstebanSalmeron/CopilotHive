@@ -361,7 +361,7 @@ fn logo() -> Vec<Line<'static>> {
                 Span::styled(HIVE[i], bold(c_accent())),
                 Span::styled(format!("   {:<13}", tag[i]), fg(c_orange())),
                 Span::styled(format!(" {}", SIDE[4 - i].trim_end()), fg(c_orange())),
-                Span::raw("  "),
+                Span::raw("    "),
             ])
         })
         .collect()
