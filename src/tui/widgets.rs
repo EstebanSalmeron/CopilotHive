@@ -375,9 +375,9 @@ pub(super) fn eyes_closed(tick: u64, working: bool) -> bool {
 /// 5-row robot: fixed eyes that blink; working = color + blinking antenna.
 fn robot(tick: u64, working: bool) -> Vec<Line<'static>> {
     let eyes = if eyes_closed(tick, working) {
-        "-   -"
+        "- -"
     } else {
-        "◉   ◉"
+        "◉ ◉"
     };
     let ant = if working && (tick / 2).is_multiple_of(2) {
         "*"
@@ -387,17 +387,17 @@ fn robot(tick: u64, working: bool) -> Vec<Line<'static>> {
     let c = if working { c_running() } else { c_ok() };
     vec![
         Line::from(vec![
-            Span::raw("    "),
+            Span::raw("     "),
             Span::styled(ant, fg(c_attention())),
         ]),
-        Line::styled(" ╭─▀▀▀─╮", fg(c)),
+        Line::styled("  ▄█████▄", fg(c)),
         Line::from(vec![
-            Span::styled(" │", fg(c)),
-            Span::styled(eyes, bold(c)),
-            Span::styled("│", fg(c)),
+            Span::styled("  █ ", fg(c)),
+            Span::styled(eyes, bold(c_bg()).bg(c)),
+            Span::styled(" █", fg(c)),
         ]),
-        Line::styled(" │ ▄▄▄ │", fg(c)),
-        Line::styled(" ╰─┬─┬─╯", fg(c)),
+        Line::styled("  █▄▄▄▄▄█", fg(c)),
+        Line::styled("   ▀▀ ▀▀", fg(c)),
     ]
 }
 
