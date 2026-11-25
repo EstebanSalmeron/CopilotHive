@@ -33,6 +33,7 @@
 | Escribiendo | `Enter` | enviar |
 | Escribiendo | `Alt+Enter` / `Shift+Enter` / `Ctrl+J` | nueva línea |
 | Escribiendo | `←→`, `Home/End`, `Ctrl+W`, `Ctrl+U` | edición |
+| Escribiendo | `Ctrl+V` | pega una imagen (PNG) del portapapeles (solo macOS, vía `osascript`); se envía como bloque `image` de ACP con el siguiente prompt. `Backspace` con el editor vacío quita la última. Se ve como `📎 ×N` en el título del prompt |
 | Escribiendo | `Esc` | salir del prompt (conserva el borrador); `↑↓`/`PgUp/PgDn` hacen scroll |
 | Permiso | `y` / `n` / `a` | aprobar / rechazar / aprobar siempre (`Esc` rechaza) |
 

@@ -6,6 +6,7 @@ macro_rules! tr_fmt {
     };
 }
 
+mod clipboard;
 mod dashboard;
 mod history;
 mod input;
@@ -139,7 +140,9 @@ struct Tab {
     editor: input::Editor,
     typing: bool,
     scroll: Scroll,
-    prompts: UnboundedSender<String>,
+    prompts: UnboundedSender<(String, Vec<String>)>,
+    /// Base64 PNGs pasted into the draft, sent with the next prompt.
+    images: Vec<String>,
     ctl: UnboundedSender<Ctl>,
     /// ACP session config options (model, reasoning_effort, allow_all...).
     config: Vec<ConfigOpt>,
@@ -165,7 +168,7 @@ impl Drop for Tab {
 impl Tab {
     fn new(
         name: String,
-        prompts: UnboundedSender<String>,
+        prompts: UnboundedSender<(String, Vec<String>)>,
         ctl: UnboundedSender<Ctl>,
         defs: Vec<AgentDef>,
         assigned: HashMap<String, String>,
@@ -188,6 +191,7 @@ impl Tab {
             typing: false,
             scroll: Scroll::default(),
             prompts,
+            images: vec![],
             ctl,
             config: vec![],
             allow_all: false,
@@ -307,12 +311,23 @@ impl Tab {
 
     fn send_prompt(&mut self) {
         let text = self.editor.text.trim().to_string();
-        if text.is_empty() {
+        if text.is_empty() && self.images.is_empty() {
             return;
         }
-        if self.prompts.send(text.clone()).is_ok() {
+        let n = self.images.len();
+        if self
+            .prompts
+            .send((text.clone(), self.images.clone()))
+            .is_ok()
+        {
             self.editor.take();
-            self.push(Item::User(text));
+            self.images.clear();
+            let shown = match (text.is_empty(), n) {
+                (_, 0) => text,
+                (true, n) => format!("📎 ×{n}"),
+                (false, n) => format!("📎 ×{n} {text}"),
+            };
+            self.push(Item::User(shown));
             self.busy = true;
             self.scroll.off = 0;
         } else {
@@ -567,6 +582,13 @@ impl App {
                 }
                 KeyCode::Enter => t.send_prompt(),
                 KeyCode::Char('j') if ctrl => t.editor.insert('\n'),
+                KeyCode::Char('v') if ctrl => match clipboard::read_png_b64() {
+                    Ok(b) => t.images.push(b),
+                    Err(e) => t.push(Item::Note(format!("📎 {e:#}"))),
+                },
+                KeyCode::Backspace if t.editor.is_empty() && !t.images.is_empty() => {
+                    t.images.pop();
+                }
                 KeyCode::Char('w') if ctrl => t.editor.kill_word(),
                 KeyCode::Char('u') if ctrl => t.editor.kill_line(),
                 KeyCode::Char(c) if !ctrl && !alt => t.editor.insert(c),
