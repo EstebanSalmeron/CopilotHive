@@ -1028,26 +1028,77 @@ fn draw_transcript(t: &mut Tab, f: &mut Frame, area: Rect, tick: u64, focused: b
     f.render_widget(Paragraph::new(lines[start..end].to_vec()).block(blk), area);
 }
 
-/// Tree of every project: session → agent → subagents, with live tool and cost.
+fn align_row(
+    mut left: Vec<Span<'static>>,
+    right: Vec<Span<'static>>,
+    w: usize,
+    bg: Option<Color>,
+) -> Vec<Line<'static>> {
+    let w = w.max(1);
+    let paint = |mut line: Line<'static>| {
+        if let Some(c) = bg {
+            let st = Style::new().bg(c);
+            for s in &mut line.spans {
+                s.style = st.patch(s.style);
+            }
+            let lw = line.width();
+            if lw < w {
+                line.spans.push(Span::styled(" ".repeat(w - lw), st));
+            }
+            line.style = st;
+        }
+        line
+    };
+    let lw: usize = left.iter().map(Span::width).sum();
+    let rw: usize = right.iter().map(Span::width).sum();
+    if right.is_empty() {
+        return if lw <= w {
+            vec![paint(Line::from(left))]
+        } else {
+            wrap(&Line::from(left), w).into_iter().map(paint).collect()
+        };
+    }
+    if lw + 1 + rw <= w {
+        left.push(Span::raw(" ".repeat(w - lw - rw)));
+        left.extend(right);
+        vec![paint(Line::from(left))]
+    } else {
+        left.push(Span::raw(" "));
+        left.extend(right);
+        wrap(&Line::from(left), w).into_iter().map(paint).collect()
+    }
+}
+
+/// Tree of every project: active agents first, then completed grouped by kind with spend share.
 fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
     let mut out = vec![];
     for (i, t) in app.tabs.iter().enumerate() {
+        if i > 0 {
+            out.push(Line::styled(
+                format!(" {}", "─".repeat(w.saturating_sub(2))),
+                fg(c_border()),
+            ));
+        }
         let cur = i == app.current;
-        let total = t.tree.total_tokens().credits();
-        let mut head = vec![
+        let total_tk = t.tree.total_tokens();
+        let total_nano = total_tk.nano_aiu;
+        let total = total_tk.credits();
+        let head_left = vec![
             status_icon(t, tick),
             Span::styled(
                 format!(" {}", t.name),
                 if cur { bold(c_accent()) } else { bold(c_fg()) },
             ),
         ];
-        if total > 0.0 {
-            head.push(Span::styled(
-                format!("  {total:.1} cr · ${:.3}", total * 0.01),
+        let head_right = if total_nano > 0 {
+            vec![Span::styled(
+                format!("{total:.1} cr · ${:.2}", total * 0.01),
                 fg(c_orange()),
-            ));
-        }
-        out.extend(wrap(&Line::from(head), w));
+            )]
+        } else {
+            vec![Span::styled(tr("sin uso", "idle"), fg(c_dim()))]
+        };
+        out.extend(align_row(head_left, head_right, w, cur.then(c_surface)));
         if t.perm.is_some() {
             out.extend(wrap(
                 &Line::styled(
@@ -1057,34 +1108,92 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
                 w,
             ));
         }
-        let n = t.tree.agents.len();
-        for (j, a) in t.tree.agents.iter().enumerate() {
-            let sub = a.id.is_some();
-            let (icon, c) = match a.status {
-                Status::Running => (spinner(tick), c_running()),
-                Status::Completed => ("✔", c_ok()),
-                Status::Cancelled => ("✖", c_error()),
+
+        let running: Vec<_> = t
+            .tree
+            .agents
+            .iter()
+            .filter(|a| a.status == Status::Running)
+            .collect();
+        let mut by_kind: std::collections::BTreeMap<&str, (usize, u64, bool)> =
+            std::collections::BTreeMap::new();
+        for a in t.tree.agents.iter().filter(|a| a.status != Status::Running) {
+            let e = by_kind.entry(a.kind.as_str()).or_insert((0, 0, true));
+            e.0 += 1;
+            e.1 = e.1.saturating_add(a.tokens.nano_aiu);
+            e.2 &= a.status == Status::Cancelled;
+        }
+        let mut groups: Vec<(&str, usize, u64, bool)> = by_kind
+            .into_iter()
+            .map(|(k, (n, nano, canc))| (k, n, nano, canc))
+            .collect();
+        groups.sort_by_key(|&(kind, _, nano, _)| (kind != "main", std::cmp::Reverse(nano), kind));
+
+        let total_rows = running.len() + groups.len();
+        for (j, a) in running.iter().enumerate() {
+            let last = j + 1 == total_rows;
+            let left = vec![
+                Span::styled(if last { " └ " } else { " ├ " }, fg(c_border())),
+                Span::styled(spinner(tick), bold(c_running())),
+                Span::styled(format!(" {}", a.name), bold(c_fg())),
+            ];
+            let right = if a.tokens.nano_aiu > 0 {
+                vec![Span::styled(
+                    format!("{:.1} cr", a.tokens.credits()),
+                    fg(c_orange()),
+                )]
+            } else {
+                vec![]
             };
-            let branch = if j + 1 == n { "└" } else { "├" };
-            let pad = if sub { "   " } else { "" };
-            let mut text = format!(" {branch}{pad} {icon} {}", a.name);
-            if a.tokens.nano_aiu > 0 {
-                text.push_str(&format!(
-                    " {:.1} cr · ${:.3}",
-                    a.tokens.credits(),
-                    a.tokens.credits() * 0.01
-                ));
-            }
-            out.extend(wrap(&Line::styled(text, fg(c)), w));
-            if let (Some(tool), Status::Running) = (&a.current_tool, a.status) {
-                let rail = if j + 1 == n { " " } else { "│" };
+            out.extend(align_row(left, right, w, None));
+            if let Some(tool) = &a.current_tool {
+                let rail = if last { "   " } else { " │ " };
                 out.extend(wrap(
-                    &Line::styled(format!(" {rail}{pad}   ↳ {tool}"), fg(c_dim())),
+                    &Line::from(vec![
+                        Span::styled(rail, fg(c_border())),
+                        Span::styled(format!("  ↳ {tool}"), fg(c_dim())),
+                    ]),
                     w,
                 ));
             }
         }
-        out.push(Line::default());
+
+        for (k, (kind, count, group_nano, all_cancelled)) in groups.iter().enumerate() {
+            let last = k + 1 == groups.len();
+            let (icon, ic) = if *all_cancelled {
+                ("✖", c_error())
+            } else {
+                ("✔", c_ok())
+            };
+            let mut left = vec![
+                Span::styled(if last { " └ " } else { " ├ " }, fg(c_border())),
+                Span::styled(icon, fg(ic)),
+                Span::styled(format!(" {kind}"), fg(c_fg())),
+            ];
+            if *count > 1 {
+                left.push(Span::styled(format!(" ×{count}"), fg(c_dim())));
+            }
+            let right = if *group_nano > 0 {
+                let cost_str = format!("{:.1} cr", *group_nano as f64 / 1e9);
+                let lw: usize = left.iter().map(Span::width).sum();
+                let mut r = vec![];
+                if total_nano > 0 && lw + 7 + cost_str.width() <= w {
+                    let filled = ((*group_nano as u128 * 5 + total_nano as u128 / 2)
+                        / total_nano as u128)
+                        .clamp(1, 5) as usize;
+                    r.push(Span::styled("▰".repeat(filled), fg(c_orange())));
+                    if filled < 5 {
+                        r.push(Span::styled("▱".repeat(5 - filled), fg(c_border())));
+                    }
+                    r.push(Span::raw(" "));
+                }
+                r.push(Span::styled(cost_str, fg(c_orange())));
+                r
+            } else {
+                vec![]
+            };
+            out.extend(align_row(left, right, w, None));
+        }
     }
     out
 }
@@ -1688,7 +1797,7 @@ mod tests {
 
         let dash = sidebar_lines(&a, 24, 0);
         assert!(dash.len() > 4, "expected wrapped dashboard lines");
-        assert!(dash.last().is_some_and(|l| l.spans.is_empty()));
+        assert!(dash.iter().all(|l| l.width() <= 24));
         let dash_txt = join(&dash);
         assert!(dash_txt.contains("probar-wrap") && !dash_txt.contains('…'));
         assert!(dash_txt.contains("del-repositorio"));
@@ -1705,6 +1814,255 @@ mod tests {
         let mcps_txt = join(&mcps);
         assert!(mcps_txt.contains("larguisimo") && mcps_txt.contains("local"));
         assert!(!mcps_txt.contains('…'));
+    }
+
+    #[test]
+    fn sidebar_groups_completed_keeps_running_top_and_separates_projects() {
+        let mut t1 = tab("alpha");
+        for l in [
+            r#"{"type":"assistant.turn_start","data":{}}"#,
+            r#"{"type":"session.usage_record","data":{"usage":{"copilotUsage":{"totalNanoAiu":1000000000}}}}"#,
+            r#"{"type":"assistant.turn_end","data":{}}"#,
+            r#"{"type":"subagent.started","agentId":"d1","data":{"agentType":"developer","agentDisplayName":"dev-1"}}"#,
+            r#"{"type":"session.usage_record","agentId":"d1","data":{"usage":{"copilotUsage":{"totalNanoAiu":2000000000}}}}"#,
+            r#"{"type":"subagent.completed","agentId":"d1","data":{"durationMs":100}}"#,
+            r#"{"type":"subagent.started","agentId":"d2","data":{"agentType":"developer","agentDisplayName":"dev-2"}}"#,
+            r#"{"type":"session.usage_record","agentId":"d2","data":{"usage":{"copilotUsage":{"totalNanoAiu":2000000000}}}}"#,
+            r#"{"type":"subagent.completed","agentId":"d2","data":{"durationMs":100}}"#,
+            r#"{"type":"subagent.started","agentId":"d3","data":{"agentType":"developer","agentDisplayName":"dev-3"}}"#,
+            r#"{"type":"session.usage_record","agentId":"d3","data":{"usage":{"copilotUsage":{"totalNanoAiu":2000000000}}}}"#,
+            r#"{"type":"subagent.completed","agentId":"d3","data":{"durationMs":100}}"#,
+            r#"{"type":"subagent.started","agentId":"t1","data":{"agentType":"tester","agentDisplayName":"test-1"}}"#,
+            r#"{"type":"session.usage_record","agentId":"t1","data":{"usage":{"copilotUsage":{"totalNanoAiu":1500000000}}}}"#,
+            r#"{"type":"subagent.completed","agentId":"t1","data":{"durationMs":100}}"#,
+            r#"{"type":"subagent.started","agentId":"t2","data":{"agentType":"tester","agentDisplayName":"test-2"}}"#,
+            r#"{"type":"session.usage_record","agentId":"t2","data":{"usage":{"copilotUsage":{"totalNanoAiu":500000000}}}}"#,
+            r#"{"type":"subagent.completed","agentId":"t2","data":{"cancelled":true}}"#,
+            r#"{"type":"subagent.started","agentId":"c1","data":{"agentType":"reviewer","agentDisplayName":"rev-1"}}"#,
+            r#"{"type":"subagent.completed","agentId":"c1","data":{"cancelled":true}}"#,
+            r#"{"type":"subagent.started","agentId":"r1","data":{"agentType":"explore","agentDisplayName":"live-explorer"}}"#,
+            r#"{"type":"session.usage_record","agentId":"r1","data":{"usage":{"copilotUsage":{"totalNanoAiu":1000000000}}}}"#,
+            r#"{"type":"tool.execution_start","agentId":"r1","data":{"toolCallId":"tc1","toolName":"grep"}}"#,
+        ] {
+            t1.tree.apply(l);
+        }
+        let a = app(vec![t1, tab("beta")]);
+        let text = |l: &Line| -> String { l.spans.iter().map(|s| s.content.as_ref()).collect() };
+
+        let lines = sidebar_lines(&a, 48, 0);
+        assert!(lines.iter().all(|l| l.width() <= 48));
+        let rows: Vec<String> = lines.iter().map(text).collect();
+
+        // Active tab header has surface background and right-aligned total cost.
+        assert_eq!(lines[0].style.bg, Some(c_surface()));
+        assert!(rows[0].contains("alpha") && rows[0].ends_with("10.0 cr · $0.10"));
+
+        // Running agent appears first with its live tool and rail, before completed groups.
+        let run_idx = rows
+            .iter()
+            .position(|r| r.contains("live-explorer"))
+            .unwrap();
+        let tool_idx = rows.iter().position(|r| r.contains("↳ grep")).unwrap();
+        let main_idx = rows.iter().position(|r| r.contains("✔ main")).unwrap();
+        let dev_idx = rows
+            .iter()
+            .position(|r| r.contains("developer ×3"))
+            .unwrap();
+        let test_idx = rows.iter().position(|r| r.contains("tester ×2")).unwrap();
+        let rev_idx = rows.iter().position(|r| r.contains("✖ reviewer")).unwrap();
+        assert!(run_idx < tool_idx && tool_idx < main_idx);
+        assert!(main_idx < dev_idx && dev_idx < test_idx && test_idx < rev_idx);
+        assert!(rows[run_idx].contains("1.0 cr"));
+        assert!(rows[tool_idx].starts_with(" │ "));
+        assert!(rows[dev_idx].contains('▰') && rows[dev_idx].ends_with("6.0 cr"));
+        assert!(
+            rows[test_idx].contains('✔')
+                && rows[test_idx].contains('▰')
+                && rows[test_idx].ends_with("2.0 cr")
+        );
+
+        // Separator between projects and idle label for second project without spend.
+        let sep_idx = rows.iter().position(|r| r.contains('─')).unwrap();
+        let beta_idx = rows.iter().position(|r| r.contains("beta")).unwrap();
+        assert_eq!(sep_idx + 1, beta_idx);
+        assert_eq!(lines[beta_idx].style.bg, None);
+        assert!(rows[beta_idx].contains("sin uso") || rows[beta_idx].contains("idle"));
+
+        // Narrow widths never panic and never overflow w (for w >= 1).
+        for w in [0, 1, 2, 12, 24] {
+            let narrow = sidebar_lines(&a, w, 0);
+            assert!(!narrow.is_empty());
+            if w >= 1 {
+                assert!(
+                    narrow.iter().all(|l| l.width() <= w),
+                    "overflow at w={w}: {:?}",
+                    narrow.iter().map(text).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn align_row_handles_alignment_surface_bg_wrap_and_wide_utf8() {
+        let text = |l: &Line| -> String { l.spans.iter().map(|s| s.content.as_ref()).collect() };
+
+        // Exact fit (lw + 1 + rw == w): single line, right-aligned, surface bg everywhere.
+        let exact = align_row(
+            vec![Span::styled("abc", bold(c_accent()))],
+            vec![Span::styled("123", fg(c_orange()))],
+            7,
+            Some(c_surface()),
+        );
+        assert_eq!(exact.len(), 1);
+        assert_eq!(text(&exact[0]), "abc 123");
+        assert_eq!(exact[0].style.bg, Some(c_surface()));
+        assert!(
+            exact[0]
+                .spans
+                .iter()
+                .all(|s| s.style.bg == Some(c_surface()))
+        );
+        assert_eq!(exact[0].spans[0].style.fg, Some(c_accent()));
+
+        // No room for 1-space gap (lw + rw == w): wraps and pads every wrapped line to w.
+        let wrapped = align_row(
+            vec![Span::styled("abcd", fg(c_fg()))],
+            vec![Span::styled("12", fg(c_orange()))],
+            6,
+            Some(c_surface()),
+        );
+        assert!(wrapped.len() >= 2);
+        for l in &wrapped {
+            assert_eq!(l.width(), 6);
+            assert_eq!(l.style.bg, Some(c_surface()));
+            assert!(l.spans.iter().all(|s| s.style.bg == Some(c_surface())));
+        }
+
+        // Empty right pads single line to w with surface bg.
+        let solo = align_row(vec![Span::raw("hi")], vec![], 6, Some(c_surface()));
+        assert_eq!(solo.len(), 1);
+        assert_eq!(solo[0].width(), 6);
+        assert_eq!(solo[0].style.bg, Some(c_surface()));
+
+        // Extreme widths with wide UTF-8 never panic and never overflow w (for w >= 2).
+        for w in [0, 1, 2, 10, 48] {
+            let rows = align_row(
+                vec![Span::styled("● 日本語🚀", fg(c_fg()))],
+                vec![Span::styled("費用 1.0", fg(c_orange()))],
+                w,
+                Some(c_surface()),
+            );
+            assert!(!rows.is_empty());
+            if w >= 2 {
+                assert!(
+                    rows.iter().all(|l| l.width() <= w),
+                    "wide UTF-8 overflow at w={w}: {:?}",
+                    rows.iter().map(text).collect::<Vec<_>>()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sidebar_edge_cases_last_running_rail_ties_bar_overflow_and_dash_scroll() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let text = |l: &Line| -> String { l.spans.iter().map(|s| s.content.as_ref()).collect() };
+
+        // 1) Running agent as the only/last item uses └ and blank rail (no │) for its tool.
+        let mut only_run = tab("solo");
+        for l in [
+            r#"{"type":"subagent.started","agentId":"r1","data":{"agentType":"explore","agentDisplayName":"only-live"}}"#,
+            r#"{"type":"tool.execution_start","agentId":"r1","data":{"toolCallId":"t1","toolName":"view"}}"#,
+        ] {
+            only_run.tree.apply(l);
+        }
+        let solo_rows: Vec<String> = sidebar_lines(&app(vec![only_run]), 40, 0)
+            .iter()
+            .map(text)
+            .collect();
+        let run_row = solo_rows.iter().find(|r| r.contains("only-live")).unwrap();
+        let tool_row = solo_rows.iter().find(|r| r.contains("↳ view")).unwrap();
+        assert!(run_row.starts_with(" └ "));
+        assert!(tool_row.starts_with("     ↳ view") && !tool_row.contains('│'));
+
+        // 2) Alphabetical tie-breaker on equal nano_aiu, large u64 rounding without overflow,
+        //    tiny non-zero share clamps to 1 block, and bar hides when width is too narrow.
+        let mut big = tab("scale");
+        let half = u64::MAX / 2;
+        let quarter = u64::MAX / 4;
+        for l in [
+            r#"{"type":"assistant.turn_start","data":{}}"#,
+            r#"{"type":"session.usage_record","data":{"usage":{"copilotUsage":{"totalNanoAiu":1}}}}"#,
+            r#"{"type":"assistant.turn_end","data":{}}"#,
+            r#"{"type":"subagent.started","agentId":"z1","data":{"agentType":"zeta","agentDisplayName":"z1"}}"#,
+            &format!(
+                r#"{{"type":"session.usage_record","agentId":"z1","data":{{"usage":{{"copilotUsage":{{"totalNanoAiu":{quarter}}}}}}}}}"#
+            ),
+            r#"{"type":"subagent.completed","agentId":"z1","data":{"durationMs":10}}"#,
+            r#"{"type":"subagent.started","agentId":"a1","data":{"agentType":"alpha","agentDisplayName":"a1"}}"#,
+            &format!(
+                r#"{{"type":"session.usage_record","agentId":"a1","data":{{"usage":{{"copilotUsage":{{"totalNanoAiu":{quarter}}}}}}}}}"#
+            ),
+            r#"{"type":"subagent.completed","agentId":"a1","data":{"durationMs":10}}"#,
+            r#"{"type":"subagent.started","agentId":"h1","data":{"agentType":"heavy","agentDisplayName":"h1"}}"#,
+            &format!(
+                r#"{{"type":"session.usage_record","agentId":"h1","data":{{"usage":{{"copilotUsage":{{"totalNanoAiu":{half}}}}}}}}}"#
+            ),
+            r#"{"type":"subagent.completed","agentId":"h1","data":{"durationMs":10}}"#,
+        ] {
+            big.tree.apply(l);
+        }
+        let big_rows: Vec<String> = sidebar_lines(&app(vec![big]), 48, 0)
+            .iter()
+            .map(text)
+            .collect();
+        let main_i = big_rows.iter().position(|r| r.contains("✔ main")).unwrap();
+        let heavy_i = big_rows.iter().position(|r| r.contains("✔ heavy")).unwrap();
+        let alpha_i = big_rows.iter().position(|r| r.contains("✔ alpha")).unwrap();
+        let zeta_i = big_rows.iter().position(|r| r.contains("✔ zeta")).unwrap();
+        assert!(main_i < heavy_i && heavy_i < alpha_i && alpha_i < zeta_i);
+        assert!(big_rows[main_i].contains("▰▱▱▱▱"));
+        assert!(big_rows[heavy_i].contains("▰▰▰▱▱"));
+        assert!(big_rows[alpha_i].contains("▰▱▱▱▱"));
+
+        // 3) Bar is omitted when it would not fit in w, keeping single-line aligned cost.
+        let mut fit = tab("fit");
+        for l in [
+            r#"{"type":"subagent.started","agentId":"d1","data":{"agentType":"developer","agentDisplayName":"d1"}}"#,
+            r#"{"type":"session.usage_record","agentId":"d1","data":{"usage":{"copilotUsage":{"totalNanoAiu":1000000000}}}}"#,
+            r#"{"type":"subagent.completed","agentId":"d1","data":{"durationMs":10}}"#,
+        ] {
+            fit.tree.apply(l);
+        }
+        let fit_app = app(vec![fit]);
+        // " └ ✔ developer" (14) + 7 + "1.0 cr" (6) = 27 -> fits with full 5-block bar.
+        let with_bar: Vec<String> = sidebar_lines(&fit_app, 27, 0).iter().map(text).collect();
+        assert!(with_bar.iter().any(|r| r.contains("▰▰▰▰▰ 1.0 cr")));
+        // At w=26 bar does not fit, so bar is omitted while cost stays right-aligned on 1 line.
+        let no_bar: Vec<String> = sidebar_lines(&fit_app, 26, 0).iter().map(text).collect();
+        let dev_row = no_bar.iter().find(|r| r.contains("developer")).unwrap();
+        assert!(!dev_row.contains('▰') && dev_row.ends_with("1.0 cr"));
+        assert_eq!(dev_row.width(), 26);
+
+        // 4) Idle label respects tr("sin uso", "idle") and dashboard scrolls across many projects.
+        let mut many = app((1..=14).map(|i| tab(&format!("proj-{i:02}"))).collect());
+        let idle_lbl = tr("sin uso", "idle");
+        let lines = sidebar_lines(&many, 48, 0);
+        assert!(lines.iter().map(text).any(|r| r.contains(idle_lbl)));
+        assert_eq!(lines.iter().filter(|l| text(l).contains('─')).count(), 13);
+
+        let _ = screen(&mut many, 120, 22);
+        many.focus = Pane::Dashboard;
+        many.on_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE));
+        assert!(many.dash_scroll.max > 0);
+        assert_eq!(many.dash_scroll.off, many.dash_scroll.max);
+        let bottom = screen(&mut many, 120, 22);
+        assert!(
+            bottom.contains("proj-14"),
+            "expected last project\n{bottom}"
+        );
+        many.on_key(KeyEvent::new(KeyCode::Home, KeyModifiers::NONE));
+        assert_eq!(many.dash_scroll.off, 0);
     }
 
     #[test]
