@@ -725,7 +725,7 @@ fn mcp_lines(t: &Tab, w: usize) -> Vec<Line<'static>> {
     if t.mcp.is_empty() {
         return vec![];
     }
-    let mut out = vec![Line::styled("MCP", bold(c_accent()))];
+    let mut out = vec![];
     for (s, on) in &t.mcp {
         let (icon, c) = if *on {
             ("●", c_ok())
@@ -741,15 +741,19 @@ fn mcp_lines(t: &Tab, w: usize) -> Vec<Line<'static>> {
 }
 
 fn draw_sidebar(lines: Vec<Line<'static>>, mcp: Vec<Line<'static>>, f: &mut Frame, area: Rect) {
-    let title = Line::styled(tr(" dashboard ", " dashboard "), bold(c_accent()));
-    let blk = block(title, c_border());
-    let inner = blk.inner(area);
-    f.render_widget(blk, area);
-    // Keep the MCP list pinned to the bottom, but never let it hide the agent tree.
-    let h = (mcp.len() as u16).min(inner.height / 2);
-    let [top, bottom] = Layout::vertical([Constraint::Min(0), Constraint::Length(h)]).areas(inner);
-    f.render_widget(Paragraph::new(lines), top);
-    f.render_widget(Paragraph::new(mcp), bottom);
+    // The MCP box sits at the bottom, but never takes more than half the sidebar.
+    let h = if mcp.is_empty() {
+        0
+    } else {
+        (mcp.len() as u16 + 2).min(area.height / 2)
+    };
+    let [top, bottom] = Layout::vertical([Constraint::Min(0), Constraint::Length(h)]).areas(area);
+    let title = Line::styled(" dashboard ", bold(c_accent()));
+    f.render_widget(Paragraph::new(lines).block(block(title, c_border())), top);
+    if h > 0 {
+        let title = Line::styled(" MCP ", bold(c_accent()));
+        f.render_widget(Paragraph::new(mcp).block(block(title, c_border())), bottom);
+    }
 }
 
 /// Draws the prompt box; returns the screen position of the cursor.
