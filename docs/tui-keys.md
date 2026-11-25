@@ -1,6 +1,6 @@
 # TUI: teclas
 
-`copilot-hive tui [--config FILE]`. Terminal mínima 60x18; el panel de agentes se oculta por debajo de 100 columnas.
+`copilot-hive tui [--config FILE]`. Terminal mínima 60x20; el panel de agentes se oculta por debajo de 100 columnas.
 
 | Modo | Tecla | Acción |
 |------|-------|--------|
