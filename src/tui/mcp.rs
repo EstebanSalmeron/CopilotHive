@@ -43,11 +43,7 @@ pub(super) fn discover(cwd: &Path, home: Option<&Path>) -> Vec<Server> {
             };
             for (name, s) in m {
                 if out.iter().all(|o| &o.name != name) {
-                    let kind = if s["url"].is_string() {
-                        "http"
-                    } else {
-                        "local"
-                    };
+                    let kind = kind(s);
                     out.push(Server {
                         name: name.clone(),
                         kind,
@@ -57,6 +53,26 @@ pub(super) fn discover(cwd: &Path, home: Option<&Path>) -> Vec<Server> {
         }
     }
     out
+}
+
+/// "remote" when the server talks to a non-loopback URL, either directly (`url`)
+/// or through a bridge such as `mcp-remote <url>` in `args`.
+fn kind(s: &Value) -> &'static str {
+    let args = s["args"].as_array().into_iter().flatten();
+    let url = s["url"].as_str().or_else(|| {
+        args.filter_map(Value::as_str)
+            .find(|a| a.starts_with("http"))
+    });
+    match url {
+        Some(u)
+            if !["//localhost", "//127.0.0.1", "//[::1]"]
+                .iter()
+                .any(|l| u.contains(l)) =>
+        {
+            "remote"
+        }
+        _ => "local",
+    }
 }
 
 fn load_all() -> BTreeMap<String, Vec<String>> {
@@ -215,13 +231,22 @@ mod tests {
         std::fs::create_dir_all(&cwd).unwrap();
         std::fs::write(
             home.join(".copilot/mcp-config.json"),
-            r#"{"mcpServers":{"a":{"command":"x"},"b":{"url":"http://x"}}}"#,
+            r#"{"mcpServers":{"a":{"command":"x"},"b":{"url":"http://x"},"d":{"command":"npx","args":["mcp-remote","https://h/mcp"]},"e":{"url":"http://localhost:1/mcp"}}}"#,
         )
         .unwrap();
         std::fs::write(cwd.join(".mcp.json"), r#"{"mcpServers":{"a":{},"c":{}}}"#).unwrap();
         let s = discover(&cwd, Some(&home));
         let got: Vec<_> = s.iter().map(|s| (s.name.as_str(), s.kind)).collect();
-        assert_eq!(got, [("a", "local"), ("b", "http"), ("c", "local")]);
+        assert_eq!(
+            got,
+            [
+                ("a", "local"),
+                ("b", "remote"),
+                ("d", "remote"),
+                ("e", "local"),
+                ("c", "local")
+            ]
+        );
         std::fs::remove_dir_all(d).unwrap();
     }
 
