@@ -128,13 +128,18 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         .count();
     let (dash, help) = (app.dash, app.help);
     draw_tabs(app, f, tick, area);
-    let side_lines = (dash == Dash::Side && area.width >= SIDEBAR_MIN_TOTAL)
-        .then(|| sidebar_lines(app, SIDEBAR_W as usize - 2, tick));
+    let side_lines = (dash == Dash::Side && area.width >= SIDEBAR_MIN_TOTAL).then(|| {
+        let w = SIDEBAR_W as usize - 2;
+        (
+            sidebar_lines(app, w, tick),
+            mcp_lines(&app.tabs[app.current], w),
+        )
+    });
     let t = &mut app.tabs[app.current];
     let in_w = area.width.saturating_sub(2) as usize;
     let in_rows = t.editor.layout(in_w).0.len().clamp(1, 6) as u16;
     let [_, _, info, _, body, input, status] = Layout::vertical([
-        Constraint::Length(5),
+        Constraint::Length(7),
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -157,7 +162,8 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     } else {
         draw_transcript(t, f, main, tick);
         if let Some(s) = side {
-            draw_sidebar(side_lines.unwrap_or_default(), f, s);
+            let (l, m) = side_lines.unwrap_or_default();
+            draw_sidebar(l, m, f, s);
         }
         cursor = draw_input(t, f, input);
     }
@@ -189,6 +195,9 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         o.draw(f, area);
     }
     if let Some(m) = &app.settings {
+        m.draw(f, area);
+    }
+    if let Some(m) = &app.mcp {
         m.draw(f, area);
     }
     if help {
@@ -277,7 +286,13 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
         None => Line::styled(tr("◆ centro de mando", "◆ command center"), fg(c_dim())),
     };
     f.render_widget(
-        Paragraph::new(vec![title, summary, Line::from(spans)]),
+        Paragraph::new(vec![
+            title,
+            Line::default(),
+            summary,
+            Line::default(),
+            Line::from(spans),
+        ]),
         right,
     );
 }
@@ -328,21 +343,25 @@ pub(super) fn quip(tick: u64) -> Option<&'static str> {
     Some(tr(es, en))
 }
 
-/// Right-aligned header badge: "COPILOT HIVE" in box letters between honeycomb strips.
+/// Right-aligned header badge: big "HIVE" with the product name between honeycomb strips.
 fn logo() -> Vec<Line<'static>> {
-    const TITLE: [&str; 3] = [
-        "╔═╗╔═╗╔═╗╦╦  ╔═╗╔╦╗  ╦ ╦╦╦  ╦╔═╗",
-        "║  ║ ║╠═╝║║  ║ ║ ║   ╠═╣║╚╗╔╝║╣ ",
-        "╚═╝╚═╝╩  ╩╩═╝╚═╝ ╩   ╩ ╩╩ ╚╝ ╚═╝",
+    const HIVE: [&str; 5] = [
+        "█ █  ███  █ █  ███",
+        "█ █   █   █ █  █  ",
+        "███   █   █ █  ███",
+        "█ █   █   █ █  █  ",
+        "█ █  ███   █   ███",
     ];
-    const LEFT: [&str; 3] = ["⬢⬡⬢⬡ ", "⬡⬢⬡⬢ ", "⬢⬡⬢⬡ "];
-    const RIGHT: [&str; 3] = [" ⬡⬢⬡⬢  ", " ⬢⬡⬢⬡  ", " ⬡⬢⬡⬢  "];
-    (0..3)
+    const SIDE: [&str; 5] = ["⬢⬡⬢⬡ ", "⬡⬢⬡⬢ ", "⬢⬡⬢⬡ ", "⬡⬢⬡⬢ ", "⬢⬡⬢⬡ "];
+    let tag = ["", "C O P I L O T", "─────────────", "multi-agent", ""];
+    (0..5)
         .map(|i| {
             Line::from(vec![
-                Span::styled(LEFT[i], fg(c_orange())),
-                Span::styled(TITLE[i], bold(c_accent())),
-                Span::styled(RIGHT[i], fg(c_orange())),
+                Span::styled(SIDE[i], fg(c_orange())),
+                Span::styled(HIVE[i], bold(c_accent())),
+                Span::styled(format!("   {:<13}", tag[i]), fg(c_orange())),
+                Span::styled(format!(" {}", SIDE[4 - i].trim_end()), fg(c_orange())),
+                Span::raw("  "),
             ])
         })
         .collect()
@@ -353,7 +372,7 @@ pub(super) fn eyes_closed(tick: u64, working: bool) -> bool {
     tick % if working { 15 } else { 40 } < 2
 }
 
-/// 3-row robot: fixed eyes that blink; working = color + blinking antenna.
+/// 5-row robot: fixed eyes that blink; working = color + blinking antenna.
 fn robot(tick: u64, working: bool) -> Vec<Line<'static>> {
     let eyes = if eyes_closed(tick, working) {
         "- -"
@@ -367,13 +386,18 @@ fn robot(tick: u64, working: bool) -> Vec<Line<'static>> {
     };
     let c = if working { c_running() } else { c_ok() };
     vec![
-        Line::from(vec![Span::raw("   "), Span::styled(ant, fg(c_attention()))]),
         Line::from(vec![
-            Span::styled(" ▐", fg(c)),
-            Span::styled(format!("{eyes:^5}"), bold(c)),
-            Span::styled("▌", fg(c)),
+            Span::raw("     "),
+            Span::styled(ant, fg(c_attention())),
         ]),
-        Line::styled(" ╰─▄▄▄─╯", fg(c)),
+        Line::styled("  ▄█████▄", fg(c)),
+        Line::from(vec![
+            Span::styled("  █ ", fg(c)),
+            Span::styled(eyes, bold(c_bg()).bg(c)),
+            Span::styled(" █", fg(c)),
+        ]),
+        Line::styled("  █▄▄▄▄▄█", fg(c)),
+        Line::styled("   ▀▀ ▀▀", fg(c)),
     ]
 }
 
@@ -531,6 +555,10 @@ fn welcome() -> Vec<Line<'static>> {
         k(
             "S",
             tr("ajustes: tema e idioma", "settings: theme and language"),
+        ),
+        k(
+            "M",
+            tr("servidores MCP del proyecto", "project MCP servers"),
         ),
     ]
 }
@@ -693,9 +721,35 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
     out
 }
 
-fn draw_sidebar(lines: Vec<Line<'static>>, f: &mut Frame, area: Rect) {
+fn mcp_lines(t: &Tab, w: usize) -> Vec<Line<'static>> {
+    if t.mcp.is_empty() {
+        return vec![];
+    }
+    let mut out = vec![Line::styled("MCP", bold(c_accent()))];
+    for (s, on) in &t.mcp {
+        let (icon, c) = if *on {
+            ("●", c_ok())
+        } else {
+            ("○", c_dim())
+        };
+        out.push(Line::styled(
+            trunc(&format!(" {icon} {} · {}", s.name, s.kind), w),
+            fg(c),
+        ));
+    }
+    out
+}
+
+fn draw_sidebar(lines: Vec<Line<'static>>, mcp: Vec<Line<'static>>, f: &mut Frame, area: Rect) {
     let title = Line::styled(tr(" dashboard ", " dashboard "), bold(c_accent()));
-    f.render_widget(Paragraph::new(lines).block(block(title, c_border())), area);
+    let blk = block(title, c_border());
+    let inner = blk.inner(area);
+    f.render_widget(blk, area);
+    // Keep the MCP list pinned to the bottom, but never let it hide the agent tree.
+    let h = (mcp.len() as u16).min(inner.height / 2);
+    let [top, bottom] = Layout::vertical([Constraint::Min(0), Constraint::Length(h)]).areas(inner);
+    f.render_widget(Paragraph::new(lines), top);
+    f.render_widget(Paragraph::new(mcp), bottom);
 }
 
 /// Draws the prompt box; returns the screen position of the cursor.
@@ -798,6 +852,7 @@ fn draw_status(
             ("d", "dashboard"),
             ("o", tr("abrir", "open")),
             ("S", tr("ajustes", "settings")),
+            ("M", "MCP"),
             ("H", tr("historial", "history")),
             ("m", tr("modelo", "model")),
             (
@@ -874,8 +929,15 @@ mod tests {
     #[test]
     fn renders_dashboard_with_model_tokens_and_agents() {
         let mut a = app(vec![busy_tab(), tab("beta")]);
+        let srv = |n: &str| super::super::mcp::Server {
+            name: n.into(),
+            kind: "local",
+        };
+        a.tabs[0].mcp = vec![(srv("pg"), true), (srv("web"), false)];
         let s = screen(&mut a, 120, 35);
         for needle in [
+            "● pg · local",
+            "○ web · local",
             "claude-x",
             "(high)",
             "12.3k",

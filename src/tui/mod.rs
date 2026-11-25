@@ -10,6 +10,7 @@ mod dashboard;
 mod history;
 mod input;
 mod markdown;
+mod mcp;
 mod modals;
 mod open;
 mod session;
@@ -149,6 +150,8 @@ struct Tab {
     assigned: HashMap<String, String>,
     /// Selected row of the full dashboard, by agent name so it survives re-sorting.
     dash_sel: Option<String>,
+    /// MCP servers the session was started with, and whether each is enabled.
+    mcp: Vec<(mcp::Server, bool)>,
 }
 
 impl Drop for Tab {
@@ -191,6 +194,7 @@ impl Tab {
             defs,
             assigned,
             dash_sel: None,
+            mcp: vec![],
         }
     }
 
@@ -375,6 +379,7 @@ pub struct App {
     history: Option<history::History>,
     open: Option<open::Browser>,
     settings: Option<settings::Menu>,
+    mcp: Option<mcp::Menu>,
     tx: Tx,
     tick: u64,
 }
@@ -471,6 +476,17 @@ impl App {
         if let Some(m) = &mut self.settings {
             if m.on_key(code) {
                 self.settings = None;
+            }
+            return false;
+        }
+        if let Some(m) = &mut self.mcp {
+            match m.on_key(code) {
+                mcp::Action::None => {}
+                mcp::Action::Close => self.mcp = None,
+                mcp::Action::Apply => {
+                    self.mcp = None;
+                    self.restart_current();
+                }
             }
             return false;
         }
@@ -599,6 +615,7 @@ impl App {
             KeyCode::Char('A') => self.confirm = Some(Confirm::AllowAll),
             KeyCode::Char('m') => self.open_selector(true),
             KeyCode::Char('e') => self.open_selector(false),
+            KeyCode::Char('M') => self.mcp = Some(mcp::Menu::new(&t.name, &t.cwd)),
             KeyCode::Char('S') => self.settings = Some(settings::Menu::new()),
             KeyCode::Char('o') => {
                 let dir = start_dir(&t.cwd);
@@ -654,6 +671,24 @@ impl App {
     fn close_current(&mut self) {
         self.tabs.remove(self.current);
         self.current = self.current.min(self.tabs.len() - 1);
+    }
+
+    /// Replaces the current tab with a fresh ACP process that reloads its session,
+    /// so a changed MCP server list takes effect.
+    fn restart_current(&mut self) {
+        let old = &self.tabs[self.current];
+        let (name, cwd, sid) = (old.name.clone(), old.cwd.clone(), old.sid.clone());
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut tab = spawn_tab(id, name, cwd, sid, &self.tx);
+        tab.push(Item::Note(
+            settings::tr(
+                "MCP actualizados: sesión reiniciada (allow all y modelo se restablecen)",
+                "MCP updated: session restarted (allow all and model are reset)",
+            )
+            .into(),
+        ));
+        self.tabs[self.current] = tab;
     }
 
     /// Opens a past session in a new tab (`session/load`), or focuses the tab that already has it.
@@ -893,6 +928,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         history: None,
         open: None,
         settings: None,
+        mcp: None,
         tx,
         tick: 0,
     };
@@ -970,6 +1006,7 @@ mod tests {
             history: None,
             open: None,
             settings: None,
+            mcp: None,
             tx: unbounded_channel().0,
             tick: 0,
         }

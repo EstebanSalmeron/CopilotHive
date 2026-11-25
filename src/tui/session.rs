@@ -21,6 +21,7 @@ async fn run_project(
     idx: usize,
     cwd: String,
     resume: Option<String>,
+    disabled_mcp: Vec<String>,
     mut prompts: UnboundedReceiver<String>,
     ctl: UnboundedReceiver<Ctl>,
     tx: Tx,
@@ -31,7 +32,7 @@ async fn run_project(
     let mut on_perm = |p: Perm| {
         let _ = tx.send((idx, Msg::Perm(p)));
     };
-    let mut c = acp::Client::spawn(&cwd)?;
+    let mut c = acp::Client::spawn(&cwd, &disabled_mcp)?;
     let tx_warn = tx.clone();
     c.on_warn(move |w| {
         let _ = tx_warn.send((idx, Msg::Warn(w)));
@@ -168,8 +169,16 @@ pub(super) fn spawn_tab(
     let mut tab = Tab::new(name, ptx, ctl, defs, loaded);
     tab.cwd = cwd.clone();
     let tx2 = tx.clone();
+    let disabled_mcp = super::mcp::disabled(&tab.cwd);
+    tab.mcp = super::mcp::discover(Path::new(&tab.cwd), home.as_deref())
+        .into_iter()
+        .map(|s| {
+            let on = !disabled_mcp.contains(&s.name);
+            (s, on)
+        })
+        .collect();
     let task = tokio::spawn(async move {
-        if let Err(e) = run_project(i, cwd, resume, prx, crx, tx2.clone()).await {
+        if let Err(e) = run_project(i, cwd, resume, disabled_mcp, prx, crx, tx2.clone()).await {
             let _ = tx2.send((i, Msg::Failed(format!("{e:#}"))));
         }
     });
