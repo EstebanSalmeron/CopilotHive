@@ -754,12 +754,19 @@ fn draw_sidebar(lines: Vec<Line<'static>>, mcp: Vec<Line<'static>>, f: &mut Fram
 
 /// Draws the prompt box; returns the screen position of the cursor.
 fn draw_input(t: &Tab, f: &mut Frame, area: Rect) -> Option<(u16, u16)> {
+    let pics = match t.images.len() {
+        0 => String::new(),
+        n => format!("📎 ×{n} "),
+    };
     let title = if t.typing {
-        " prompt ".to_string()
+        format!(" prompt {pics}")
     } else if t.editor.is_empty() {
-        tr(" prompt (Enter para escribir) ", " prompt (Enter to type) ").into()
+        format!(
+            "{}{pics}",
+            tr(" prompt (Enter para escribir) ", " prompt (Enter to type) ")
+        )
     } else {
-        tr(" prompt ✎ borrador ", " prompt ✎ draft ").into()
+        format!("{}{pics}", tr(" prompt ✎ borrador ", " prompt ✎ draft "))
     };
     let blk = block(
         Line::styled(title, bold(if t.typing { c_ok() } else { c_dim() })),
@@ -772,8 +779,8 @@ fn draw_input(t: &Tab, f: &mut Frame, area: Rect) -> Option<(u16, u16)> {
     let lines: Vec<Line<'static>> = if t.editor.is_empty() {
         vec![Line::styled(
             tr(
-                "Escribe tu prompt… (Enter envía · Alt+Enter nueva línea · Esc sale)",
-                "Type your prompt… (Enter sends · Alt+Enter newline · Esc exits)",
+                "Escribe tu prompt… (Enter envía · Ctrl+V pega imagen · Alt+Enter nueva línea · Esc sale)",
+                "Type your prompt… (Enter sends · Ctrl+V paste image · Alt+Enter newline · Esc exits)",
             ),
             fg(c_dim()),
         )]

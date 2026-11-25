@@ -22,7 +22,7 @@ async fn run_project(
     cwd: String,
     resume: Option<String>,
     disabled_mcp: Vec<String>,
-    mut prompts: UnboundedReceiver<String>,
+    mut prompts: UnboundedReceiver<(String, Vec<String>)>,
     ctl: UnboundedReceiver<Ctl>,
     tx: Tx,
 ) -> Result<()> {
@@ -95,11 +95,18 @@ async fn run_project(
     loop {
         tokio::select! {
             text = prompts.recv() => {
-                let Some(text) = text else { return Ok(()) };
+                let Some((text, images)) = text else { return Ok(()) };
+                let mut blocks = images
+                    .iter()
+                    .map(|d| json!({"type":"image","mimeType":"image/png","data":d}))
+                    .collect::<Vec<_>>();
+                if !text.is_empty() {
+                    blocks.push(json!({"type":"text","text":text}));
+                }
                 let r = c
                     .request(
                         "session/prompt",
-                        json!({"sessionId":sid,"prompt":[{"type":"text","text":text}]}),
+                        json!({"sessionId":sid,"prompt":blocks}),
                         long,
                         &mut on_line,
                         &mut on_perm,
