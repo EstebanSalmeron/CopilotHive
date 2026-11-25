@@ -393,7 +393,7 @@ fn robot(tick: u64, working: bool) -> Vec<Line<'static>> {
         Line::styled("  ▄█████▄", fg(c)),
         Line::from(vec![
             Span::styled("  █ ", fg(c)),
-            Span::styled(eyes, bold(c_bg()).bg(c)),
+            Span::styled(eyes, bold(c_attention())),
             Span::styled(" █", fg(c)),
         ]),
         Line::styled("  █▄▄▄▄▄█", fg(c)),
