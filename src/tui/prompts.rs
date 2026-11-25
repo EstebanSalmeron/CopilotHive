@@ -38,8 +38,13 @@ fn load_from(path: &Path) -> Result<Vec<Prompt>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
         Err(e) => return Err(e.to_string()),
     };
-    let store: Store = toml::from_str(&text).map_err(|e| e.to_string())?;
+    let store: Store = toml::from_str(&text).map_err(|e| e.message().to_string())?;
     Ok(store.prompts)
+}
+
+fn error_line(e: &str, w: usize) -> Line<'static> {
+    let clean = e.split_whitespace().collect::<Vec<_>>().join(" ");
+    Line::styled(trunc(&format!("✖ {clean}"), w), fg(c_error()))
 }
 
 fn save_to(path: &Path, prompts: &[Prompt]) -> Result<(), String> {
@@ -161,7 +166,7 @@ impl Menu {
                     return Action::Apply(p.body.clone());
                 }
             }
-            KeyCode::Char('n') => {
+            KeyCode::Char('n') if !self.load_failed => {
                 self.error = None;
                 self.mode = Mode::Form {
                     editing: None,
@@ -170,7 +175,7 @@ impl Menu {
                     body: Editor::default(),
                 };
             }
-            KeyCode::Char('s') => {
+            KeyCode::Char('s') if !self.load_failed => {
                 if self.draft.trim().is_empty() {
                     self.error = Some(tr("el borrador está vacío", "draft is empty").into());
                 } else {
@@ -241,6 +246,7 @@ impl Menu {
                 let text = body.text.trim().to_string();
                 if title.is_empty() {
                     self.error = Some(tr("escribe un nombre", "enter a name").into());
+                    *in_body = false;
                     return;
                 }
                 if text.is_empty() {
@@ -324,7 +330,23 @@ impl Menu {
                     .collect()
             })
             .unwrap_or_default();
-        let list_max = area.height.saturating_sub(10).clamp(1, 10) as usize;
+        let footer = wrap(
+            &Line::styled(
+                tr(
+                    "↑↓ elegir · Enter aplicar · n nuevo · s borrador · e editar · d borrar · Esc cerrar",
+                    "↑↓ select · Enter apply · n new · s draft · e edit · d delete · Esc close",
+                ),
+                fg(c_dim()),
+            ),
+            inner_w,
+        );
+        let overhead = 4
+            + usize::from(!preview.is_empty())
+            + preview.len()
+            + 1
+            + footer.len()
+            + usize::from(self.error.is_some());
+        let list_max = (area.height as usize).saturating_sub(overhead).clamp(1, 10);
         let list_rows = self.prompts.len().clamp(1, list_max);
         let top = (self.sel + 1).saturating_sub(list_rows);
         let mut lines: Vec<Line<'static>> = if self.prompts.is_empty() {
@@ -357,15 +379,9 @@ impl Menu {
             lines.extend(preview);
         }
         lines.push(Line::default());
-        lines.push(Line::styled(
-            tr(
-                "↑↓ elegir · Enter aplicar · n nuevo · s borrador · e editar · d borrar · Esc cerrar",
-                "↑↓ select · Enter apply · n new · s draft · e edit · d delete · Esc close",
-            ),
-            fg(c_dim()),
-        ));
+        lines.extend(footer);
         if let Some(e) = &self.error {
-            lines.push(Line::styled(format!("✖ {e}"), fg(c_error())));
+            lines.push(error_line(e, inner_w));
         }
         let h = (lines.len() as u16 + 2).min(area.height.saturating_sub(2));
         let r = centered(area, w, h);
@@ -444,10 +460,7 @@ impl Menu {
             hint_a,
         );
         if let Some(e) = &self.error {
-            f.render_widget(
-                Paragraph::new(Line::styled(format!("✖ {e}"), fg(c_error()))),
-                err_a,
-            );
+            f.render_widget(Paragraph::new(error_line(e, err_a.width as usize)), err_a);
         }
         if let Some(pos) = if in_body { body_cur } else { name_cur } {
             f.set_cursor_position(pos);
@@ -478,7 +491,7 @@ fn draw_field(
     };
     f.render_widget(Paragraph::new(lines).block(blk), area);
     (inner.width > 0 && inner.height > 0)
-        .then_some((inner.x + cc as u16, inner.y + (cr - top) as u16))
+        .then(|| (inner.x + cc as u16, inner.y + (cr - top) as u16))
 }
 
 #[cfg(test)]
@@ -554,18 +567,116 @@ mod tests {
         std::fs::write(&file, "not valid toml [[[").unwrap();
 
         let mut m = Menu::with_path(Some(file.clone()), "draft".into(), false);
-        assert!(m.load_failed && m.error.is_some());
+        assert!(m.load_failed);
+        let err = m.error.as_deref().unwrap();
+        assert!(!err.contains('\n'));
+
+        // n and s stay in List mode and keep the error visible
         m.on_key(key(KeyCode::Char('n')));
-        type_str(&mut m, "x");
-        m.on_key(key(KeyCode::Tab));
-        type_str(&mut m, "y");
-        m.on_key(key(KeyCode::Enter));
-        assert!(m.error.is_some());
+        assert!(matches!(m.mode, Mode::List) && m.error.is_some());
+        m.on_key(key(KeyCode::Char('s')));
+        assert!(matches!(m.mode, Mode::List) && m.error.is_some());
         assert_eq!(
             std::fs::read_to_string(&file).unwrap(),
             "not valid toml [[["
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn form_validation_utf8_and_render_smoke() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let render = |m: &Menu, w: u16, h: u16| -> String {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            term.draw(|f| m.draw(f, f.area())).unwrap();
+            let buf = term.backend().buffer();
+            (0..h)
+                .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let mut m = Menu::with_path(None, String::new(), false);
+        // s with empty draft sets error and stays in list
+        m.on_key(key(KeyCode::Char('s')));
+        assert!(m.error.is_some());
+        assert!(matches!(m.mode, Mode::List));
+
+        // n -> empty name blocked, Esc cancels without saving
+        m.on_key(key(KeyCode::Char('n')));
+        m.on_key(key(KeyCode::Tab));
+        type_str(&mut m, "cuerpo ñáé 日本語");
+        m.on_key(key(KeyCode::Enter));
+        assert!(m.error.is_some());
+        assert!(matches!(m.mode, Mode::Form { .. }));
+        let form_screen = render(&m, 60, 18);
+        assert!(form_screen.contains("cuerpo ñáé"));
+
+        m.on_key(key(KeyCode::Esc));
+        assert!(matches!(m.mode, Mode::List));
+        assert!(m.prompts.is_empty());
+
+        // Populate multiple UTF-8 multiline prompts and render at 100x30 and 60x18
+        for i in 0..12 {
+            m.on_key(key(KeyCode::Char('n')));
+            type_str(&mut m, &format!("Reseña {i} 🚀"));
+            m.on_key(key(KeyCode::Tab));
+            type_str(&mut m, "línea uno\nlínea dos\nlínea tres\nlínea cuatro");
+            m.on_key(key(KeyCode::Enter));
+        }
+        assert_eq!(m.prompts.len(), 12);
+        for _ in 0..15 {
+            m.on_key(key(KeyCode::Down));
+        }
+        assert_eq!(m.sel, 11);
+        let list_wide = render(&m, 100, 30);
+        assert!(list_wide.contains("Reseña 11"));
+        let list_min = render(&m, 60, 18);
+        assert!(list_min.contains("Reseña 11"));
+    }
+
+    #[test]
+    fn list_60x18_keeps_wrapped_footer_and_error_and_tiny_form_does_not_panic() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+
+        let render = |m: &Menu, w: u16, h: u16| -> String {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            term.draw(|f| m.draw(f, f.area())).unwrap();
+            let buf = term.backend().buffer();
+            (0..h)
+                .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>())
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let mut m = Menu::with_path(None, String::new(), false);
+        for i in 0..10 {
+            m.prompts.push(Prompt {
+                name: format!("Prompt {i}"),
+                body: "line 1\nline 2\nline 3\nline 4".into(),
+            });
+        }
+        m.error = Some("line one\nline two".into());
+        let screen = render(&m, 60, 18);
+        assert!(screen.contains("Esc"), "footer clipped:\n{screen}");
+        assert!(
+            screen.contains("✖ line one line two"),
+            "error clipped:\n{screen}"
+        );
+
+        // Empty name while focused on body returns focus to name
+        m.error = None;
+        m.on_key(key(KeyCode::Char('n')));
+        m.on_key(key(KeyCode::Tab));
+        type_str(&mut m, "body");
+        m.on_key(key(KeyCode::Enter));
+        assert!(matches!(m.mode, Mode::Form { in_body: false, .. }));
+
+        // Tiny terminal (inner.height == 0 in draw_field) must not panic
+        let _ = render(&m, 20, 4);
     }
 }

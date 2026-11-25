@@ -1257,4 +1257,42 @@ mod tests {
         assert!(a.tabs[0].typing);
         assert_eq!(a.tabs[0].editor.text, "revisa el diff");
     }
+
+    #[test]
+    fn prompts_empty_draft_and_full_dashboard_apply() {
+        let mut a = app(vec![tab("a")]);
+        // Ctrl+S with whitespace-only draft pushes a note instead of opening modal
+        a.on_key(key(KeyCode::Char('i')));
+        a.on_key(key(KeyCode::Char(' ')));
+        a.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        assert!(a.prompts.is_none());
+        assert!(
+            a.tabs[0]
+                .items
+                .iter()
+                .any(|it| matches!(it, Item::Note(s) if !s.is_empty()))
+        );
+
+        // Leave typing, switch to Dash::Full, open prompts with 'p', create and apply
+        a.tabs[0].editor.take();
+        a.on_key(key(KeyCode::Esc));
+        a.on_key(key(KeyCode::Char('s'))); // Dash::Full
+        assert!(a.dash == Dash::Full);
+        a.on_key(key(KeyCode::Char('p')));
+        assert!(a.prompts.is_some());
+        a.on_key(key(KeyCode::Char('n')));
+        for c in "audit".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Tab));
+        for c in "haz audit".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter)); // save
+        a.on_key(key(KeyCode::Enter)); // apply
+        assert!(a.prompts.is_none());
+        assert!(a.dash == Dash::Side);
+        assert!(a.tabs[0].typing);
+        assert_eq!(a.tabs[0].editor.text, "haz audit");
+    }
 }
