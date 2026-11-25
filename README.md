@@ -1,30 +1,30 @@
 # Copilot Hive
 
-Interfaz de terminal (TUI) en Rust para trabajar con **múltiples sesiones de GitHub Copilot CLI en paralelo** y supervisar en tiempo real sus agentes, subagentes, permisos y consumo de AI Credits.
+A Rust terminal UI (TUI) for running **multiple GitHub Copilot CLI sessions in parallel** and monitoring their agents, subagents, permissions, and AI Credits usage in real time.
 
-Se conecta a Copilot mediante **ACP** ([Agent Client Protocol](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server), `copilot --acp --stdio`) para el control interactivo y lee `~/.copilot/session-state/<sessionId>/events.jsonl` para reconstruir el árbol de subagentes y métricas de uso.
+It connects to Copilot over **ACP** ([Agent Client Protocol](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server), `copilot --acp --stdio`) for interactive control and reads `~/.copilot/session-state/<sessionId>/events.jsonl` to build the subagent hierarchy and usage metrics.
 
-![Vista multiproyecto de Copilot Hive](docs/assets/tui-overview.svg)
+![Copilot Hive multi-project view](docs/assets/tui-overview.svg)
 
-## Características principales
+## Key features
 
-- **Multiproyecto en pestañas:** abre varios repositorios a la vez (desde configuración o con el explorador `o`), cada uno con su propia sesión ACP, borrador independiente e indicador de estado.
-- **Dashboard en tiempo real:** panel lateral (`d`) y vista completa (`s`) con agentes activos, histórico agrupado por tipo, barras de gasto, modelos asignados/usados y estado de tool calls.
-- **Control de permisos y `/fleet`:** aprueba o rechaza peticiones (`y`/`n`/`a`), salta al siguiente proyecto bloqueado con `!`, activa *allow all* (`A`) o lanza tareas paralelas con `/fleet` (`f`).
-- **Consumo y presupuesto:** seguimiento en vivo de AI Credits (y estimación en USD) por agente, por sesión y acumulado mensual de todos los proyectos en el header.
-- **Prompts reutilizables (`p` / `Ctrl+S`):** biblioteca local compartida entre proyectos (`~/.config/copilot-hive/prompts.toml`).
-- **Gestión de modelos, subagentes y MCP:** cambia modelo (`m`) y *reasoning effort* (`e`), fija modelos obligatorios por subagente (`🔒`), activa/desactiva servidores MCP por proyecto (`M`) y reanuda sesiones anteriores (`H`).
-- **Ratón, temas e idioma:** foco y scroll independiente por panel (teclado `]`/`[` o ratón), tema oscuro/claro e idioma español/English (`S`).
+- **Multi-project tabs:** open multiple repositories at once (from config or with the folder picker `o`), each with its own ACP session, independent prompt draft, and status indicator.
+- **Real-time dashboard:** sidebar panel (`d`) and full view (`s`) showing running agents, grouped completed history, spend bars, assigned vs. actual models, and tool call activity.
+- **Permissions & `/fleet`:** approve or deny requests (`y`/`n`/`a`), jump to the next blocked project with `!`, toggle *allow all* (`A`), or dispatch parallel subagents with `/fleet` (`f`).
+- **Usage & monthly budget:** live AI Credits (and USD estimate) per agent, per session, and month-to-date across all projects in the header.
+- **Reusable local prompts (`p` / `Ctrl+S`):** shared prompt library stored locally in `~/.config/copilot-hive/prompts.toml`.
+- **Models, subagents & MCP control:** switch model (`m`) and reasoning effort (`e`), pin required subagent models (`🔒`), enable/disable MCP servers per project (`M`), and resume past sessions (`H`).
+- **Mouse, themes & i18n:** independent pane focus and scrolling (`]`/`[` or mouse click/wheel), dark/light theme, and English/Spanish UI (`S`).
 
-![Vista completa de subagentes](docs/assets/dashboard-full.svg)
+![Full subagents dashboard](docs/assets/dashboard-full.svg)
 
-## Requisitos
+## Requirements
 
-- **Rust** estable (edición 2024).
-- **GitHub Copilot CLI** (`copilot`) instalado y autenticado en tu `PATH` con soporte ACP (`copilot --acp --stdio`).
-- Terminal con soporte TrueColor (mínimo `60×20`; el panel lateral aparece a partir de `100` columnas).
+- **Rust** stable (2024 edition).
+- **GitHub Copilot CLI** (`copilot`) installed and authenticated in your `PATH` with ACP support (`copilot --acp --stdio`).
+- TrueColor-capable terminal (minimum `60×20`; sidebar appears at `100+` columns).
 
-## Instalación y uso
+## Install & run
 
 ```bash
 git clone https://github.com/EstebanSalmeron/CopilotHive.git
@@ -32,53 +32,53 @@ cd CopilotHive
 cargo install --path .
 ```
 
-O ejecutarlo directamente sin instalar:
+Or run directly without installing:
 
 ```bash
 cargo run --release -- tui
 ```
 
-### Configuración de proyectos
+### Project configuration
 
-Por defecto lee `~/.config/copilot-hive/projects.toml` (o `--config RUTA`):
+By default it reads `~/.config/copilot-hive/projects.toml` (or `--config PATH`):
 
 ```toml
 [[projects]]
 name = "api-service"
-path = "/ruta/a/api-service"
+path = "/path/to/api-service"
 
 [[projects]]
 name = "web-app"
-path = "/ruta/a/web-app"
+path = "/path/to/web-app"
 ```
 
-Si no existe el archivo, se abre directamente sobre el directorio actual. Hay una plantilla en [`docs/config.example.toml`](docs/config.example.toml).
+If the file does not exist, Copilot Hive opens in the current working directory. See [`docs/config.example.toml`](docs/config.example.toml) for a template.
 
-## Atajos rápidos
+## Quick keybindings
 
-| Tecla | Acción |
-|-------|--------|
-| `Tab` / `Alt+1..9` | Cambiar de proyecto |
-| `Enter` / `i` | Escribir prompt (`Alt+Enter` / `Ctrl+J` nueva línea, `Ctrl+S` guardar prompt, `Ctrl+V` pegar imagen en macOS) |
-| `f` | Abrir prompt con `/fleet ` |
-| `p` | Prompts guardados localmente |
-| `d` / `s` | Mostrar/ocultar sidebar / vista completa de subagentes |
-| `]` / `[` | Cambiar foco entre paneles (o click/rueda del ratón) |
-| `y` / `n` / `a` | Aprobar / rechazar / aprobar siempre un permiso (`!` salta al siguiente pendiente) |
-| `m` / `e` | Cambiar modelo / *reasoning effort* |
-| `H` / `o` | Historial de sesiones / abrir nueva carpeta |
-| `M` / `S` / `A` | Servidores MCP / ajustes (tema e idioma) / *allow all* |
-| `?` / `q` | Ayuda / salir |
+| Key | Action |
+|-----|--------|
+| `Tab` / `Alt+1..9` | Switch project tab |
+| `Enter` / `i` | Compose prompt (`Alt+Enter` / `Ctrl+J` newline, `Ctrl+S` save prompt, `Ctrl+V` paste image on macOS) |
+| `f` | Open prompt prefilled with `/fleet ` |
+| `p` | Local saved prompts |
+| `d` / `s` | Toggle sidebar dashboard / full subagents view |
+| `]` / `[` | Cycle pane focus (or mouse click / scroll wheel) |
+| `y` / `n` / `a` | Approve / deny / always approve permission (`!` jumps to next pending) |
+| `m` / `e` | Change model / reasoning effort |
+| `H` / `o` | Session history / open folder in new tab |
+| `M` / `S` / `A` | MCP servers / settings (theme & language) / allow all |
+| `?` / `q` | Help / quit |
 
-Referencia completa en [`docs/tui-keys.md`](docs/tui-keys.md).
+Full keybinding reference in [`docs/tui-keys.md`](docs/tui-keys.md).
 
-## Arquitectura y desarrollo
+## Architecture & development
 
-- `src/acp/`: cliente JSON-RPC sobre NDJSON para `copilot --acp --stdio`.
-- `src/events.rs` y `src/history.rs`: lectura incremental de `events.jsonl` para subagentes, historial y consumo mensual.
-- `src/tui/`: interfaz con `ratatui` (pestañas, markdown, dashboard, modales, prompts locales, MCP y ajustes).
+- `src/acp/`: minimal JSON-RPC over NDJSON client for `copilot --acp --stdio`.
+- `src/events.rs` & `src/history.rs`: incremental `events.jsonl` reader for subagent trees, session history, and monthly usage.
+- `src/tui/`: `ratatui` interface (tabs, markdown, dashboard, modals, local prompts, MCP, and settings).
 
-Verificación local:
+Local checks:
 
 ```bash
 cargo fmt --check

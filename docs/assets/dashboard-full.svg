@@ -12,19 +12,19 @@
 <rect x="333.2" y="242.0" width="932.9" height="16.5" fill="#24283b"/>
 <rect x="14.0" y="440.0" width="34.1" height="16.5" fill="#7aa2f7"/>
 <rect x="123.2" y="440.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="249.2" y="440.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="408.8" y="440.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="518.0" y="440.0" width="42.5" height="16.5" fill="#7aa2f7"/>
-<rect x="652.4" y="440.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="240.8" y="440.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="366.8" y="440.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="450.8" y="440.0" width="42.5" height="16.5" fill="#7aa2f7"/>
+<rect x="576.8" y="440.0" width="25.7" height="16.5" fill="#7aa2f7"/>
 <text x="14.0" y="40.0" fill="#3b4261" xml:space="preserve">╭</text>
-<text x="30.8" y="40.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">◆ centro de mando</text>
-<text x="182.0" y="40.0" fill="#3b4261" xml:space="preserve">─────────────────────────────────────────────────────────╮╭</text>
-<text x="686.0" y="40.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">mes 2026-11</text>
-<text x="786.8" y="40.0" fill="#3b4261" xml:space="preserve">─────────╮╭──────────────────────────────────────────────╮</text>
+<text x="30.8" y="40.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">◆ command center</text>
+<text x="173.6" y="40.0" fill="#3b4261" xml:space="preserve">──────────────────────────────────────────────────────────╮╭</text>
+<text x="686.0" y="40.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">month 2026-11</text>
+<text x="803.6" y="40.0" fill="#3b4261" xml:space="preserve">───────╮╭──────────────────────────────────────────────╮</text>
 <text x="14.0" y="56.5" fill="#3b4261" xml:space="preserve">│</text>
 <text x="64.4" y="56.5" fill="#e0af68" xml:space="preserve">⌁</text>
 <text x="114.8" y="56.5" fill="#e0af68" xml:space="preserve">◀</text>
-<text x="131.6" y="56.5" fill="#e0af68" font-style="italic" xml:space="preserve">“Yo no compilo, yo solo opino.”</text>
+<text x="131.6" y="56.5" fill="#e0af68" font-style="italic" xml:space="preserve">“I don't compile, I just opine.”</text>
 <text x="660.8" y="56.5" fill="#3b4261" xml:space="preserve">││</text>
 <text x="862.4" y="56.5" fill="#3b4261" xml:space="preserve">││</text>
 <text x="887.6" y="56.5" fill="#ff9e64" xml:space="preserve">⬢⬡⬢⬡</text>
@@ -50,13 +50,13 @@
 <text x="39.2" y="89.5" fill="#7dcfff" xml:space="preserve">█</text>
 <text x="56.0" y="89.5" fill="#e0af68" font-weight="bold" xml:space="preserve">◉ ◉</text>
 <text x="89.6" y="89.5" fill="#7dcfff" xml:space="preserve">█</text>
-<text x="114.8" y="89.5" fill="#c0caf5" xml:space="preserve">3 proyectos</text>
-<text x="215.6" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
-<text x="232.4" y="89.5" fill="#7dcfff" xml:space="preserve">1 trabajando</text>
-<text x="341.6" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
-<text x="358.4" y="89.5" fill="#bb9af7" xml:space="preserve">1 subagentes</text>
-<text x="467.6" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
-<text x="484.4" y="89.5" fill="#ff9e64" xml:space="preserve">70.00 cr · $0.700</text>
+<text x="114.8" y="89.5" fill="#c0caf5" xml:space="preserve">3 projects</text>
+<text x="207.2" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
+<text x="224.0" y="89.5" fill="#7dcfff" xml:space="preserve">1 working</text>
+<text x="308.0" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
+<text x="324.8" y="89.5" fill="#bb9af7" xml:space="preserve">1 subagents</text>
+<text x="425.6" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
+<text x="442.4" y="89.5" fill="#ff9e64" xml:space="preserve">70.00 cr · $0.700</text>
 <text x="660.8" y="89.5" fill="#3b4261" xml:space="preserve">││</text>
 <text x="753.2" y="89.5" fill="#e0af68" font-weight="bold" xml:space="preserve">$4.83</text>
 <text x="862.4" y="89.5" fill="#3b4261" xml:space="preserve">││</text>
@@ -95,7 +95,7 @@
 <text x="450.8" y="122.5" fill="#565f89" xml:space="preserve">infra</text>
 <text x="501.2" y="122.5" fill="#3b4261" xml:space="preserve">│</text>
 <text x="660.8" y="122.5" fill="#3b4261" xml:space="preserve">││</text>
-<text x="694.4" y="122.5" fill="#565f89" xml:space="preserve">todos los proyectos</text>
+<text x="719.6" y="122.5" fill="#565f89" xml:space="preserve">all projects</text>
 <text x="862.4" y="122.5" fill="#3b4261" xml:space="preserve">││</text>
 <text x="887.6" y="122.5" fill="#ff9e64" xml:space="preserve">⬢⬡⬢⬡</text>
 <text x="929.6" y="122.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">█ █</text>
@@ -117,22 +117,21 @@
 <text x="837.2" y="172.0" fill="#3b4261" xml:space="preserve">▱▱▱▱▱▱</text>
 <text x="896.0" y="172.0" fill="#9ece6a" xml:space="preserve">32% 64.0k/200.0k</text>
 <text x="14.0" y="205.0" fill="#7aa2f7" xml:space="preserve">╭</text>
-<text x="30.8" y="205.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">dashboard · agentes del proyecto (5) · ↑↓ elegir · m modelo 🔒 · s vista · d ocultar</text>
-<text x="744.8" y="205.0" fill="#7aa2f7" xml:space="preserve">──────────────────────────────────────────────────────────────╮</text>
+<text x="30.8" y="205.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">dashboard · project agents (5) · ↑↓ select · m model 🔒 · s side view · d hide</text>
+<text x="694.4" y="205.0" fill="#7aa2f7" xml:space="preserve">────────────────────────────────────────────────────────────────────╮</text>
 <text x="14.0" y="221.5" fill="#7aa2f7" xml:space="preserve">│</text>
-<text x="39.2" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Agente</text>
-<text x="215.6" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Estado</text>
-<text x="316.4" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Asignado</text>
-<text x="543.2" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Usado</text>
-<text x="761.6" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Ej.</text>
-<text x="803.6" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Tools</text>
+<text x="39.2" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Agent</text>
+<text x="215.6" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Status</text>
+<text x="316.4" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Assigned</text>
+<text x="543.2" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Used</text>
+<text x="761.6" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Runs Tools</text>
 <text x="862.4" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Tokens in/out/cache</text>
-<text x="1038.8" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Créditos</text>
-<text x="1198.4" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Tiempo</text>
+<text x="1038.8" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Credits</text>
+<text x="1198.4" y="221.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Time</text>
 <text x="1265.6" y="221.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="14.0" y="238.0" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="39.2" y="238.0" fill="#7dcfff" xml:space="preserve">⠼ main</text>
-<text x="215.6" y="238.0" fill="#7dcfff" xml:space="preserve">ejecutando</text>
+<text x="215.6" y="238.0" fill="#7dcfff" xml:space="preserve">running</text>
 <text x="316.4" y="238.0" fill="#565f89" xml:space="preserve">—</text>
 <text x="543.2" y="238.0" fill="#c0caf5" xml:space="preserve">claude-sonnet-4.5</text>
 <text x="761.6" y="238.0" fill="#c0caf5" xml:space="preserve">1</text>
@@ -144,7 +143,7 @@
 <text x="14.0" y="254.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="22.4" y="254.5" fill="#c0caf5" font-weight="bold" xml:space="preserve">▶</text>
 <text x="39.2" y="254.5" fill="#7dcfff" font-weight="bold" xml:space="preserve">⠼ developer</text>
-<text x="215.6" y="254.5" fill="#7dcfff" font-weight="bold" xml:space="preserve">ejecutando</text>
+<text x="215.6" y="254.5" fill="#7dcfff" font-weight="bold" xml:space="preserve">running</text>
 <text x="316.4" y="254.5" fill="#9ece6a" font-weight="bold" xml:space="preserve">🔒 claude-sonnet-4.5</text>
 <text x="543.2" y="254.5" fill="#c0caf5" font-weight="bold" xml:space="preserve">claude-sonnet-4.5</text>
 <text x="761.6" y="254.5" fill="#c0caf5" font-weight="bold" xml:space="preserve">1</text>
@@ -155,7 +154,7 @@
 <text x="1265.6" y="254.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="14.0" y="271.0" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="39.2" y="271.0" fill="#9ece6a" xml:space="preserve">✔ explore</text>
-<text x="215.6" y="271.0" fill="#9ece6a" xml:space="preserve">completado</text>
+<text x="215.6" y="271.0" fill="#9ece6a" xml:space="preserve">done</text>
 <text x="316.4" y="271.0" fill="#565f89" xml:space="preserve">—</text>
 <text x="543.2" y="271.0" fill="#c0caf5" xml:space="preserve">claude-haiku-4.5</text>
 <text x="761.6" y="271.0" fill="#c0caf5" xml:space="preserve">2</text>
@@ -166,7 +165,7 @@
 <text x="1265.6" y="271.0" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="14.0" y="287.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="39.2" y="287.5" fill="#9ece6a" xml:space="preserve">✔ tester</text>
-<text x="215.6" y="287.5" fill="#9ece6a" xml:space="preserve">completado</text>
+<text x="215.6" y="287.5" fill="#9ece6a" xml:space="preserve">done</text>
 <text x="316.4" y="287.5" fill="#9ece6a" xml:space="preserve">🔒 gpt-5.3-codex</text>
 <text x="543.2" y="287.5" fill="#c0caf5" xml:space="preserve">gpt-5.3-codex</text>
 <text x="761.6" y="287.5" fill="#c0caf5" xml:space="preserve">2</text>
@@ -177,7 +176,7 @@
 <text x="1265.6" y="287.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="14.0" y="304.0" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="39.2" y="304.0" fill="#565f89" xml:space="preserve">○ code-review</text>
-<text x="215.6" y="304.0" fill="#565f89" xml:space="preserve">disponible</text>
+<text x="215.6" y="304.0" fill="#565f89" xml:space="preserve">available</text>
 <text x="316.4" y="304.0" fill="#565f89" xml:space="preserve">—</text>
 <text x="543.2" y="304.0" fill="#c0caf5" xml:space="preserve">—</text>
 <text x="761.6" y="304.0" fill="#c0caf5" xml:space="preserve">0</text>
@@ -189,30 +188,30 @@
 <text x="14.0" y="320.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1265.6" y="320.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="14.0" y="337.0" fill="#7aa2f7" xml:space="preserve">╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
-<text x="14.0" y="353.5" fill="#3b4261" xml:space="preserve">╭ detalle ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
+<text x="14.0" y="353.5" fill="#3b4261" xml:space="preserve">╭ detail ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
 <text x="14.0" y="370.0" fill="#3b4261" xml:space="preserve">│</text>
 <text x="22.4" y="370.0" fill="#c0caf5" font-weight="bold" xml:space="preserve">developer</text>
 <text x="114.8" y="370.0" fill="#565f89" xml:space="preserve">[custom]</text>
 <text x="1265.6" y="370.0" fill="#3b4261" xml:space="preserve">│</text>
 <text x="14.0" y="386.5" fill="#3b4261" xml:space="preserve">│</text>
-<text x="22.4" y="386.5" fill="#565f89" xml:space="preserve">Implementa cambios mínimos y limpios</text>
+<text x="22.4" y="386.5" fill="#565f89" xml:space="preserve">Implements minimal, clean changes</text>
 <text x="1265.6" y="386.5" fill="#3b4261" xml:space="preserve">│</text>
 <text x="14.0" y="403.0" fill="#3b4261" xml:space="preserve">│</text>
-<text x="22.4" y="403.0" fill="#c0caf5" xml:space="preserve">default (frontmatter): claude-sonnet-4.5 · asignado 🔒: claude-sonnet-4.5 · usado: claude-sonnet-4.5</text>
+<text x="22.4" y="403.0" fill="#c0caf5" xml:space="preserve">default (frontmatter): claude-sonnet-4.5 · assigned 🔒: claude-sonnet-4.5 · used: claude-sonnet-4.5</text>
 <text x="1265.6" y="403.0" fill="#3b4261" xml:space="preserve">│</text>
 <text x="14.0" y="419.5" fill="#3b4261" xml:space="preserve">╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
-<text x="22.4" y="436.0" fill="#c0caf5" font-weight="bold" xml:space="preserve">Total: 5 agentes · 6 ejecuciones · 23 tools · in 48.2k · out 3.4k · cache 31.5k · 42.30 cr · $0.423 · 14.0s · Enter: usar subagente</text>
+<text x="22.4" y="436.0" fill="#c0caf5" font-weight="bold" xml:space="preserve">Total: 5 agents · 6 runs · 23 tools · in 48.2k · out 3.4k · cache 31.5k · 42.30 cr · $0.423 · 14.1s · Enter: use subagent</text>
 <text x="22.4" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">↑↓</text>
-<text x="56.0" y="452.5" fill="#565f89" xml:space="preserve">elegir</text>
+<text x="56.0" y="452.5" fill="#565f89" xml:space="preserve">select</text>
 <text x="131.6" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">m</text>
-<text x="156.8" y="452.5" fill="#565f89" xml:space="preserve">modelo 🔒</text>
-<text x="257.6" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">s</text>
-<text x="282.8" y="452.5" fill="#565f89" xml:space="preserve">vista lateral</text>
-<text x="417.2" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">d</text>
-<text x="442.4" y="452.5" fill="#565f89" xml:space="preserve">ocultar</text>
-<text x="526.4" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">Tab</text>
-<text x="568.4" y="452.5" fill="#565f89" xml:space="preserve">proyecto</text>
-<text x="660.8" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">?</text>
-<text x="686.0" y="452.5" fill="#565f89" xml:space="preserve">ayuda</text>
+<text x="156.8" y="452.5" fill="#565f89" xml:space="preserve">model 🔒</text>
+<text x="249.2" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">s</text>
+<text x="274.4" y="452.5" fill="#565f89" xml:space="preserve">side view</text>
+<text x="375.2" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">d</text>
+<text x="400.4" y="452.5" fill="#565f89" xml:space="preserve">hide</text>
+<text x="459.2" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">Tab</text>
+<text x="501.2" y="452.5" fill="#565f89" xml:space="preserve">project</text>
+<text x="585.2" y="452.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">?</text>
+<text x="610.4" y="452.5" fill="#565f89" xml:space="preserve">help</text>
 </g>
 </svg>

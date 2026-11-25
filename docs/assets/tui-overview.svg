@@ -9,37 +9,38 @@
 <g font-family="ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace" font-size="13.5">
 <rect x="114.8" y="110.0" width="168.5" height="16.5" fill="#24283b"/>
 <rect x="1097.6" y="209.0" width="403.7" height="16.5" fill="#24283b"/>
-<rect x="156.8" y="308.0" width="92.9" height="16.5" fill="#24283b"/>
-<rect x="366.8" y="308.0" width="143.3" height="16.5" fill="#24283b"/>
-<rect x="274.4" y="324.5" width="76.1" height="16.5" fill="#24283b"/>
-<rect x="677.6" y="324.5" width="92.9" height="16.5" fill="#24283b"/>
-<rect x="148.4" y="341.0" width="76.1" height="16.5" fill="#24283b"/>
-<rect x="350.0" y="341.0" width="76.1" height="16.5" fill="#24283b"/>
-<rect x="568.4" y="341.0" width="50.9" height="16.5" fill="#24283b"/>
+<rect x="198.8" y="308.0" width="92.9" height="16.5" fill="#24283b"/>
+<rect x="324.8" y="308.0" width="143.3" height="16.5" fill="#24283b"/>
+<rect x="140.0" y="324.5" width="76.1" height="16.5" fill="#24283b"/>
+<rect x="593.6" y="324.5" width="92.9" height="16.5" fill="#24283b"/>
+<rect x="114.8" y="341.0" width="76.1" height="16.5" fill="#24283b"/>
+<rect x="291.2" y="341.0" width="76.1" height="16.5" fill="#24283b"/>
+<rect x="383.6" y="341.0" width="50.9" height="16.5" fill="#24283b"/>
 <rect x="14.0" y="539.0" width="59.3" height="16.5" fill="#7aa2f7"/>
-<rect x="165.2" y="539.0" width="101.3" height="16.5" fill="#7aa2f7"/>
-<rect x="341.6" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="467.6" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="560.0" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="669.2" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="744.8" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="854.0" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="980.0" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="1080.8" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
-<rect x="1206.8" y="539.0" width="42.5" height="16.5" fill="#7aa2f7"/>
-<rect x="1341.2" y="539.0" width="42.5" height="16.5" fill="#7aa2f7"/>
+<rect x="131.6" y="539.0" width="101.3" height="16.5" fill="#7aa2f7"/>
+<rect x="308.0" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="434.0" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="518.0" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="635.6" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="711.2" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="820.4" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="929.6" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="1022.0" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
+<rect x="1148.0" y="539.0" width="42.5" height="16.5" fill="#7aa2f7"/>
+<rect x="1274.0" y="539.0" width="42.5" height="16.5" fill="#7aa2f7"/>
+<rect x="1391.6" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
 <rect x="1475.6" y="539.0" width="25.7" height="16.5" fill="#7aa2f7"/>
 <text x="14.0" y="40.0" fill="#3b4261" xml:space="preserve">╭</text>
-<text x="30.8" y="40.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">◆ centro de mando</text>
-<text x="182.0" y="40.0" fill="#3b4261" xml:space="preserve">─────────────────────────────────────────────────────────╮╭</text>
-<text x="686.0" y="40.0" fill="#7dcfff" font-weight="bold" xml:space="preserve">✦ colmena</text>
-<text x="770.0" y="40.0" fill="#3b4261" xml:space="preserve">───────────────╮╭</text>
-<text x="921.2" y="40.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">mes 2026-11</text>
-<text x="1022.0" y="40.0" fill="#3b4261" xml:space="preserve">─────────╮╭──────────────────────────────────────────────╮</text>
+<text x="30.8" y="40.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">◆ command center</text>
+<text x="173.6" y="40.0" fill="#3b4261" xml:space="preserve">──────────────────────────────────────────────────────────╮╭</text>
+<text x="686.0" y="40.0" fill="#7dcfff" font-weight="bold" xml:space="preserve">✦ hive</text>
+<text x="744.8" y="40.0" fill="#3b4261" xml:space="preserve">──────────────────╮╭</text>
+<text x="921.2" y="40.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">month 2026-11</text>
+<text x="1038.8" y="40.0" fill="#3b4261" xml:space="preserve">───────╮╭──────────────────────────────────────────────╮</text>
 <text x="14.0" y="56.5" fill="#3b4261" xml:space="preserve">│</text>
 <text x="64.4" y="56.5" fill="#e0af68" xml:space="preserve">⌁</text>
 <text x="114.8" y="56.5" fill="#e0af68" xml:space="preserve">◀</text>
-<text x="131.6" y="56.5" fill="#e0af68" font-style="italic" xml:space="preserve">“Yo no compilo, yo solo opino.”</text>
+<text x="131.6" y="56.5" fill="#e0af68" font-style="italic" xml:space="preserve">“I don't compile, I just opine.”</text>
 <text x="660.8" y="56.5" fill="#3b4261" xml:space="preserve">││</text>
 <text x="694.4" y="56.5" fill="#3b4261" xml:space="preserve">·</text>
 <text x="744.8" y="56.5" fill="#e0af68" xml:space="preserve">✦</text>
@@ -75,13 +76,13 @@
 <text x="39.2" y="89.5" fill="#7dcfff" xml:space="preserve">█</text>
 <text x="56.0" y="89.5" fill="#e0af68" font-weight="bold" xml:space="preserve">◉ ◉</text>
 <text x="89.6" y="89.5" fill="#7dcfff" xml:space="preserve">█</text>
-<text x="114.8" y="89.5" fill="#c0caf5" xml:space="preserve">3 proyectos</text>
-<text x="215.6" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
-<text x="232.4" y="89.5" fill="#7dcfff" xml:space="preserve">1 trabajando</text>
-<text x="341.6" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
-<text x="358.4" y="89.5" fill="#bb9af7" xml:space="preserve">1 subagentes</text>
-<text x="467.6" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
-<text x="484.4" y="89.5" fill="#ff9e64" xml:space="preserve">70.00 cr · $0.700</text>
+<text x="114.8" y="89.5" fill="#c0caf5" xml:space="preserve">3 projects</text>
+<text x="207.2" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
+<text x="224.0" y="89.5" fill="#7dcfff" xml:space="preserve">1 working</text>
+<text x="308.0" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
+<text x="324.8" y="89.5" fill="#bb9af7" xml:space="preserve">1 subagents</text>
+<text x="425.6" y="89.5" fill="#3b4261" xml:space="preserve">·</text>
+<text x="442.4" y="89.5" fill="#ff9e64" xml:space="preserve">70.00 cr · $0.700</text>
 <text x="660.8" y="89.5" fill="#3b4261" xml:space="preserve">││</text>
 <text x="736.4" y="89.5" fill="#7dcfff" xml:space="preserve">█</text>
 <text x="744.8" y="89.5" fill="#e0af68" font-weight="bold" xml:space="preserve">◉ ◉</text>
@@ -144,7 +145,7 @@
 <text x="879.2" y="122.5" fill="#3b4261" xml:space="preserve">═</text>
 <text x="887.6" y="122.5" fill="#565f89" xml:space="preserve">╣</text>
 <text x="896.0" y="122.5" fill="#3b4261" xml:space="preserve">││</text>
-<text x="929.6" y="122.5" fill="#565f89" xml:space="preserve">todos los proyectos</text>
+<text x="954.8" y="122.5" fill="#565f89" xml:space="preserve">all projects</text>
 <text x="1097.6" y="122.5" fill="#3b4261" xml:space="preserve">││</text>
 <text x="1122.8" y="122.5" fill="#ff9e64" xml:space="preserve">⬢⬡⬢⬡</text>
 <text x="1164.8" y="122.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">█ █</text>
@@ -167,14 +168,14 @@
 <text x="896.0" y="172.0" fill="#9ece6a" xml:space="preserve">32% 64.0k/200.0k</text>
 <text x="14.0" y="205.0" fill="#7aa2f7" xml:space="preserve">╭</text>
 <text x="30.8" y="205.0" fill="#c0caf5" font-weight="bold" xml:space="preserve">api-service</text>
-<text x="131.6" y="205.0" fill="#7dcfff" xml:space="preserve">· ⠼ trabajando</text>
-<text x="257.6" y="205.0" fill="#7aa2f7" xml:space="preserve">──────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
+<text x="131.6" y="205.0" fill="#7dcfff" xml:space="preserve">· ⠼ working</text>
+<text x="232.4" y="205.0" fill="#7aa2f7" xml:space="preserve">─────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
 <text x="1089.2" y="205.0" fill="#3b4261" xml:space="preserve">╭</text>
 <text x="1106.0" y="205.0" fill="#7aa2f7" font-weight="bold" xml:space="preserve">dashboard</text>
 <text x="1190.0" y="205.0" fill="#3b4261" xml:space="preserve">─────────────────────────────────────╮</text>
 <text x="14.0" y="221.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="22.4" y="221.5" fill="#bb9af7" font-weight="bold" xml:space="preserve">❯</text>
-<text x="39.2" y="221.5" fill="#c0caf5" font-weight="bold" xml:space="preserve">Añade rate-limiting por API key al endpoint /v1/orders y verifica con tests</text>
+<text x="39.2" y="221.5" fill="#c0caf5" font-weight="bold" xml:space="preserve">Add per-API-key rate limiting to /v1/orders and verify with integration tests</text>
 <text x="1080.8" y="221.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1089.2" y="221.5" fill="#3b4261" xml:space="preserve">│</text>
 <text x="1097.6" y="221.5" fill="#7dcfff" font-weight="bold" xml:space="preserve">⠼</text>
@@ -189,8 +190,8 @@
 <text x="1442.0" y="238.0" fill="#ff9e64" xml:space="preserve">14.2 cr</text>
 <text x="1500.8" y="238.0" fill="#3b4261" xml:space="preserve">│</text>
 <text x="14.0" y="254.5" fill="#7aa2f7" xml:space="preserve">│</text>
-<text x="39.2" y="254.5" fill="#565f89" xml:space="preserve">⌕ Explorar middleware HTTP en src/http/</text>
-<text x="375.2" y="254.5" fill="#9ece6a" xml:space="preserve">✓</text>
+<text x="39.2" y="254.5" fill="#565f89" xml:space="preserve">⌕ Search HTTP middleware in src/http/</text>
+<text x="358.4" y="254.5" fill="#9ece6a" xml:space="preserve">✓</text>
 <text x="1080.8" y="254.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1089.2" y="254.5" fill="#3b4261" xml:space="preserve">│ ├</text>
 <text x="1122.8" y="254.5" fill="#7dcfff" font-weight="bold" xml:space="preserve">⠼</text>
@@ -198,14 +199,14 @@
 <text x="1450.4" y="254.5" fill="#ff9e64" xml:space="preserve">8.5 cr</text>
 <text x="1500.8" y="254.5" fill="#3b4261" xml:space="preserve">│</text>
 <text x="14.0" y="271.0" fill="#7aa2f7" xml:space="preserve">│</text>
-<text x="39.2" y="271.0" fill="#565f89" xml:space="preserve">✎ Aplicar rate limiter en src/http/orders.rs</text>
-<text x="417.2" y="271.0" fill="#7dcfff" xml:space="preserve">…</text>
+<text x="39.2" y="271.0" fill="#565f89" xml:space="preserve">✎ Apply rate limiter in src/http/orders.rs</text>
+<text x="400.4" y="271.0" fill="#7dcfff" xml:space="preserve">…</text>
 <text x="1080.8" y="271.0" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1089.2" y="271.0" fill="#3b4261" xml:space="preserve">│ │</text>
 <text x="1139.6" y="271.0" fill="#565f89" xml:space="preserve">↳ edit</text>
 <text x="1500.8" y="271.0" fill="#3b4261" xml:space="preserve">│</text>
 <text x="14.0" y="287.5" fill="#7aa2f7" xml:space="preserve">│</text>
-<text x="22.4" y="287.5" fill="#bb9af7" font-weight="bold" xml:space="preserve">Plan en curso</text>
+<text x="22.4" y="287.5" fill="#bb9af7" font-weight="bold" xml:space="preserve">Current plan</text>
 <text x="1080.8" y="287.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1089.2" y="287.5" fill="#3b4261" xml:space="preserve">│ ├</text>
 <text x="1122.8" y="287.5" fill="#9ece6a" xml:space="preserve">✔</text>
@@ -226,37 +227,37 @@
 <text x="1450.4" y="304.0" fill="#ff9e64" xml:space="preserve">7.3 cr</text>
 <text x="1500.8" y="304.0" fill="#3b4261" xml:space="preserve">│</text>
 <text x="14.0" y="320.5" fill="#7aa2f7" xml:space="preserve">│•</text>
-<text x="39.2" y="320.5" fill="#c0caf5" xml:space="preserve">Reutilizar el</text>
-<text x="156.8" y="320.5" fill="#ff9e64" xml:space="preserve">TokenBucket</text>
-<text x="257.6" y="320.5" fill="#c0caf5" xml:space="preserve">existente en</text>
-<text x="366.8" y="320.5" fill="#ff9e64" xml:space="preserve">src/http/limit.rs</text>
-<text x="509.6" y="320.5" fill="#c0caf5" xml:space="preserve">.</text>
+<text x="39.2" y="320.5" fill="#c0caf5" xml:space="preserve">Reuse the existing</text>
+<text x="198.8" y="320.5" fill="#ff9e64" xml:space="preserve">TokenBucket</text>
+<text x="299.6" y="320.5" fill="#c0caf5" xml:space="preserve">in</text>
+<text x="324.8" y="320.5" fill="#ff9e64" xml:space="preserve">src/http/limit.rs</text>
+<text x="467.6" y="320.5" fill="#c0caf5" xml:space="preserve">.</text>
 <text x="1080.8" y="320.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1089.2" y="320.5" fill="#3b4261" xml:space="preserve">│ ────────────────────────────────────────────── │</text>
 <text x="14.0" y="337.0" fill="#7aa2f7" xml:space="preserve">│•</text>
-<text x="39.2" y="337.0" fill="#c0caf5" xml:space="preserve">Aplicar límite por cabecera</text>
-<text x="274.4" y="337.0" fill="#ff9e64" xml:space="preserve">X-Api-Key</text>
-<text x="358.4" y="337.0" fill="#c0caf5" xml:space="preserve">devolviendo</text>
-<text x="459.2" y="337.0" fill="#c0caf5" font-weight="bold" xml:space="preserve">429 Too Many Requests</text>
-<text x="644.0" y="337.0" fill="#c0caf5" xml:space="preserve">con</text>
-<text x="677.6" y="337.0" fill="#ff9e64" xml:space="preserve">Retry-After</text>
-<text x="770.0" y="337.0" fill="#c0caf5" xml:space="preserve">.</text>
+<text x="39.2" y="337.0" fill="#c0caf5" xml:space="preserve">Enforce per-</text>
+<text x="140.0" y="337.0" fill="#ff9e64" xml:space="preserve">X-Api-Key</text>
+<text x="224.0" y="337.0" fill="#c0caf5" xml:space="preserve">limits returning</text>
+<text x="366.8" y="337.0" fill="#c0caf5" font-weight="bold" xml:space="preserve">429 Too Many Requests</text>
+<text x="551.6" y="337.0" fill="#c0caf5" xml:space="preserve">with</text>
+<text x="593.6" y="337.0" fill="#ff9e64" xml:space="preserve">Retry-After</text>
+<text x="686.0" y="337.0" fill="#c0caf5" xml:space="preserve">.</text>
 <text x="1080.8" y="337.0" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1089.2" y="337.0" fill="#3b4261" xml:space="preserve">╰─────────────────────────────────────</text>
 <text x="1416.8" y="337.0" fill="#565f89" xml:space="preserve">↑↓ 1-7/12</text>
 <text x="1500.8" y="337.0" fill="#3b4261" xml:space="preserve">╯</text>
 <text x="14.0" y="353.5" fill="#7aa2f7" xml:space="preserve">│•</text>
-<text x="39.2" y="353.5" fill="#c0caf5" xml:space="preserve">El subagente</text>
-<text x="148.4" y="353.5" fill="#ff9e64" xml:space="preserve">developer</text>
-<text x="232.4" y="353.5" fill="#c0caf5" xml:space="preserve">está editando</text>
-<text x="350.0" y="353.5" fill="#ff9e64" xml:space="preserve">orders.rs</text>
-<text x="425.6" y="353.5" fill="#c0caf5" xml:space="preserve">; a continuación</text>
-<text x="568.4" y="353.5" fill="#ff9e64" xml:space="preserve">tester</text>
-<text x="627.2" y="353.5" fill="#c0caf5" xml:space="preserve">ejecutará la suite de integración.</text>
+<text x="39.2" y="353.5" fill="#c0caf5" xml:space="preserve">Subagent</text>
+<text x="114.8" y="353.5" fill="#ff9e64" xml:space="preserve">developer</text>
+<text x="198.8" y="353.5" fill="#c0caf5" xml:space="preserve">is editing</text>
+<text x="291.2" y="353.5" fill="#ff9e64" xml:space="preserve">orders.rs</text>
+<text x="366.8" y="353.5" fill="#c0caf5" xml:space="preserve">;</text>
+<text x="383.6" y="353.5" fill="#ff9e64" xml:space="preserve">tester</text>
+<text x="442.4" y="353.5" fill="#c0caf5" xml:space="preserve">will run the integration suite next.</text>
 <text x="1080.8" y="353.5" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1089.2" y="353.5" fill="#3b4261" xml:space="preserve">╭</text>
-<text x="1106.0" y="353.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Subagentes</text>
-<text x="1198.4" y="353.5" fill="#3b4261" xml:space="preserve">────────────────────────────────────╮</text>
+<text x="1106.0" y="353.5" fill="#7aa2f7" font-weight="bold" xml:space="preserve">Subagents</text>
+<text x="1190.0" y="353.5" fill="#3b4261" xml:space="preserve">─────────────────────────────────────╮</text>
 <text x="14.0" y="370.0" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1080.8" y="370.0" fill="#7aa2f7" xml:space="preserve">│</text>
 <text x="1089.2" y="370.0" fill="#3b4261" xml:space="preserve">│</text>
@@ -293,36 +294,38 @@
 <text x="14.0" y="485.5" fill="#7aa2f7" xml:space="preserve">╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
 <text x="1089.2" y="485.5" fill="#3b4261" xml:space="preserve">╰────────────────────────────────────────────────╯</text>
 <text x="14.0" y="502.0" fill="#3b4261" xml:space="preserve">╭</text>
-<text x="30.8" y="502.0" fill="#565f89" font-weight="bold" xml:space="preserve">prompt (Enter para escribir)</text>
-<text x="274.4" y="502.0" fill="#3b4261" xml:space="preserve">──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
+<text x="30.8" y="502.0" fill="#565f89" font-weight="bold" xml:space="preserve">prompt (Enter to type)</text>
+<text x="224.0" y="502.0" fill="#3b4261" xml:space="preserve">────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮</text>
 <text x="14.0" y="518.5" fill="#3b4261" xml:space="preserve">│</text>
-<text x="22.4" y="518.5" fill="#565f89" xml:space="preserve">Escribe tu prompt… (Enter envía · Ctrl+V pega imagen · Alt+Enter nueva línea · Esc sale)</text>
+<text x="22.4" y="518.5" fill="#565f89" xml:space="preserve">Type your prompt… (Enter sends · Ctrl+V paste image · Alt+Enter newline · Esc exits)</text>
 <text x="1500.8" y="518.5" fill="#3b4261" xml:space="preserve">│</text>
 <text x="14.0" y="535.0" fill="#3b4261" xml:space="preserve">╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯</text>
 <text x="22.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">Enter</text>
-<text x="81.2" y="551.5" fill="#565f89" xml:space="preserve">escribir</text>
-<text x="173.6" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">↑↓ PgUp/Dn</text>
-<text x="274.4" y="551.5" fill="#565f89" xml:space="preserve">scroll</text>
-<text x="350.0" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">d</text>
-<text x="375.2" y="551.5" fill="#565f89" xml:space="preserve">dashboard</text>
-<text x="476.0" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">o</text>
-<text x="501.2" y="551.5" fill="#565f89" xml:space="preserve">abrir</text>
-<text x="568.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">S</text>
-<text x="593.6" y="551.5" fill="#565f89" xml:space="preserve">ajustes</text>
-<text x="677.6" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">M</text>
-<text x="702.8" y="551.5" fill="#565f89" xml:space="preserve">MCP</text>
-<text x="753.2" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">p</text>
-<text x="778.4" y="551.5" fill="#565f89" xml:space="preserve">prompts</text>
-<text x="862.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">H</text>
-<text x="887.6" y="551.5" fill="#565f89" xml:space="preserve">historial</text>
-<text x="988.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">m</text>
-<text x="1013.6" y="551.5" fill="#565f89" xml:space="preserve">modelo</text>
-<text x="1089.2" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">A</text>
-<text x="1114.4" y="551.5" fill="#565f89" xml:space="preserve">allow all</text>
-<text x="1215.2" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">Tab</text>
-<text x="1257.2" y="551.5" fill="#565f89" xml:space="preserve">proyecto</text>
-<text x="1349.6" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">Esc</text>
-<text x="1391.6" y="551.5" fill="#565f89" xml:space="preserve">cancelar</text>
-<text x="1484.0" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">?</text>
+<text x="81.2" y="551.5" fill="#565f89" xml:space="preserve">type</text>
+<text x="140.0" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">↑↓ PgUp/Dn</text>
+<text x="240.8" y="551.5" fill="#565f89" xml:space="preserve">scroll</text>
+<text x="316.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">d</text>
+<text x="341.6" y="551.5" fill="#565f89" xml:space="preserve">dashboard</text>
+<text x="442.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">o</text>
+<text x="467.6" y="551.5" fill="#565f89" xml:space="preserve">open</text>
+<text x="526.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">S</text>
+<text x="551.6" y="551.5" fill="#565f89" xml:space="preserve">settings</text>
+<text x="644.0" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">M</text>
+<text x="669.2" y="551.5" fill="#565f89" xml:space="preserve">MCP</text>
+<text x="719.6" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">p</text>
+<text x="744.8" y="551.5" fill="#565f89" xml:space="preserve">prompts</text>
+<text x="828.8" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">H</text>
+<text x="854.0" y="551.5" fill="#565f89" xml:space="preserve">history</text>
+<text x="938.0" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">m</text>
+<text x="963.2" y="551.5" fill="#565f89" xml:space="preserve">model</text>
+<text x="1030.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">A</text>
+<text x="1055.6" y="551.5" fill="#565f89" xml:space="preserve">allow all</text>
+<text x="1156.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">Tab</text>
+<text x="1198.4" y="551.5" fill="#565f89" xml:space="preserve">project</text>
+<text x="1282.4" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">Esc</text>
+<text x="1324.4" y="551.5" fill="#565f89" xml:space="preserve">cancel</text>
+<text x="1400.0" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">?</text>
+<text x="1425.2" y="551.5" fill="#565f89" xml:space="preserve">help</text>
+<text x="1484.0" y="551.5" fill="#1a1b26" font-weight="bold" xml:space="preserve">q</text>
 </g>
 </svg>
