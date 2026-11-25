@@ -132,6 +132,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         let w = SIDEBAR_W as usize - 2;
         (
             sidebar_lines(app, w, tick),
+            subagent_lines(&app.tabs[app.current], w),
             mcp_lines(&app.tabs[app.current], w),
         )
     });
@@ -162,8 +163,8 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     } else {
         draw_transcript(t, f, main, tick);
         if let Some(s) = side {
-            let (l, m) = side_lines.unwrap_or_default();
-            draw_sidebar(l, m, f, s);
+            let (l, sub, m) = side_lines.unwrap_or_default();
+            draw_sidebar(l, sub, m, f, s);
         }
         cursor = draw_input(t, f, input);
     }
@@ -728,6 +729,23 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
     out
 }
 
+fn subagent_lines(t: &Tab, w: usize) -> Vec<Line<'static>> {
+    t.defs
+        .iter()
+        .filter(|d| !d.builtin)
+        .map(|d| {
+            let text = if let Some(m) = t.assigned.get(&d.name).filter(|m| !m.is_empty()) {
+                format!(" ◈ {} · 🔒 {m}", d.name)
+            } else if let Some(m) = d.model.as_deref().filter(|m| !m.is_empty()) {
+                format!(" ◈ {} · {m}", d.name)
+            } else {
+                format!(" ◈ {}", d.name)
+            };
+            Line::styled(trunc(&text, w), fg(c_fg()))
+        })
+        .collect()
+}
+
 fn mcp_lines(t: &Tab, w: usize) -> Vec<Line<'static>> {
     if t.mcp.is_empty() {
         return vec![];
@@ -747,17 +765,43 @@ fn mcp_lines(t: &Tab, w: usize) -> Vec<Line<'static>> {
     out
 }
 
-fn draw_sidebar(lines: Vec<Line<'static>>, mcp: Vec<Line<'static>>, f: &mut Frame, area: Rect) {
-    // The MCP box sits at the bottom, but never takes more than half the sidebar.
-    let h = if mcp.is_empty() {
-        0
-    } else {
-        (mcp.len() as u16 + 2).min(area.height / 2)
+fn draw_sidebar(
+    lines: Vec<Line<'static>>,
+    subs: Vec<Line<'static>>,
+    mcp: Vec<Line<'static>>,
+    f: &mut Frame,
+    area: Rect,
+) {
+    // Subagents and MCP sit below dashboard, together never taking more than half the sidebar.
+    let budget = area.height / 2;
+    let want = |v: &[Line]| {
+        if v.is_empty() {
+            0
+        } else {
+            (v.len() as u16).saturating_add(2)
+        }
     };
-    let [top, bottom] = Layout::vertical([Constraint::Min(0), Constraint::Length(h)]).areas(area);
+    let (ws, wm, half) = (want(&subs), want(&mcp), budget / 2);
+    let (hs, hm) = if ws <= half {
+        (ws, wm.min(budget - ws))
+    } else if wm <= half {
+        (ws.min(budget - wm), wm)
+    } else {
+        (half, budget - half)
+    };
+    let [top, mid, bottom] = Layout::vertical([
+        Constraint::Min(0),
+        Constraint::Length(hs),
+        Constraint::Length(hm),
+    ])
+    .areas(area);
     let title = Line::styled(" dashboard ", bold(c_accent()));
     f.render_widget(Paragraph::new(lines).block(block(title, c_border())), top);
-    if h > 0 {
+    if hs > 0 {
+        let title = Line::styled(tr(" Subagentes ", " Subagents "), bold(c_accent()));
+        f.render_widget(Paragraph::new(subs).block(block(title, c_border())), mid);
+    }
+    if hm > 0 {
         let title = Line::styled(" MCP ", bold(c_accent()));
         f.render_widget(Paragraph::new(mcp).block(block(title, c_border())), bottom);
     }
@@ -1070,6 +1114,121 @@ mod tests {
             s.contains("TODOS los permisos") && s.contains("ALLOW ALL"),
             "{s}"
         );
+    }
+
+    #[test]
+    fn sidebar_shows_only_custom_subagents_and_hides_when_empty() {
+        let def = |name: &str, model: Option<&str>, builtin: bool| crate::agents::AgentDef {
+            name: name.into(),
+            description: String::new(),
+            model: model.map(Into::into),
+            builtin,
+        };
+        let mut t = tab("alpha");
+        t.defs = vec![
+            def("explore", None, true),
+            def("developer", Some("sonnet"), false),
+            def("tester", Some("haiku"), false),
+            def("reviewer", None, false),
+        ]
+        .into();
+        t.assigned.insert("developer".into(), "opus".into());
+        let mut a = app(vec![t, tab("empty")]);
+        a.tabs[1].defs = vec![def("explore", None, true)].into();
+
+        let s = screen(&mut a, 120, 35);
+        assert!(
+            s.contains("Subagentes") || s.contains("Subagents"),
+            "missing title\n{s}"
+        );
+        for needle in ["◈ developer · 🔒  opus", "◈ tester · haiku", "◈ reviewer"] {
+            assert!(s.contains(needle), "missing {needle}\n{s}");
+        }
+        assert!(!s.contains("◈ explore"), "builtin leaked into box\n{s}");
+
+        // Coexisting with MCP at MIN_H does not panic and keeps dashboard visible.
+        a.tabs[0].mcp = vec![
+            (
+                super::super::mcp::Server {
+                    name: "pg".into(),
+                    kind: "local",
+                },
+                true,
+            ),
+            (
+                super::super::mcp::Server {
+                    name: "web".into(),
+                    kind: "http",
+                },
+                false,
+            ),
+        ];
+        let small = screen(&mut a, 100, MIN_H);
+        assert!(small.contains("dashboard"), "{small}");
+
+        // Tab with only built-in defs hides the Subagentes box.
+        a.current = 1;
+        let empty = screen(&mut a, 120, 35);
+        assert!(
+            !empty.contains("Subagentes") && !empty.contains("Subagents"),
+            "box should be hidden\n{empty}"
+        );
+    }
+
+    #[test]
+    fn sidebar_subagents_handles_budget_utf8_and_i18n() {
+        let def = |name: &str, model: Option<&str>| crate::agents::AgentDef {
+            name: name.into(),
+            description: String::new(),
+            model: model.map(Into::into),
+            builtin: false,
+        };
+        let mut t = tab("alpha");
+        let long_name = "diseñador-arquitectura-módulos-súper-largo";
+        let mut defs = vec![def(long_name, Some("claude-sonnet-4.5"))];
+        defs.extend((1..=10).map(|i| def(&format!("agent-{i}"), Some("haiku"))));
+        t.defs = defs.into();
+        t.assigned
+            .insert(long_name.into(), "claude-opus-4.6-fast".into());
+        t.mcp = (1..=10)
+            .map(|i| {
+                (
+                    super::super::mcp::Server {
+                        name: format!("srv-{i}"),
+                        kind: "local",
+                    },
+                    true,
+                )
+            })
+            .collect();
+        let mut a = app(vec![t]);
+
+        // Both boxes overloaded: dashboard, Subagentes and MCP all stay visible,
+        // and the long UTF-8 entry is truncated with '…' instead of overflowing.
+        let es = screen(&mut a, 120, 35);
+        assert!(es.contains("╭ dashboard "), "missing dashboard\n{es}");
+        assert!(es.contains("╭ Subagentes "), "missing ES title\n{es}");
+        assert!(es.contains("╭ MCP "), "missing MCP\n{es}");
+        assert!(
+            es.contains("◈ diseñador-arquitectura") && es.contains('…'),
+            "expected UTF-8 truncation\n{es}"
+        );
+
+        // Switching language updates the box title to English.
+        let mut m = super::super::settings::Menu::new();
+        m.on_key(ratatui::crossterm::event::KeyCode::Down);
+        m.on_key(ratatui::crossterm::event::KeyCode::Enter); // ES -> EN
+        let en = screen(&mut a, 120, 35);
+        m.on_key(ratatui::crossterm::event::KeyCode::Enter); // restore ES
+        assert!(en.contains("╭ Subagents "), "missing EN title\n{en}");
+        assert!(!en.contains("╭ Subagentes "), "unexpected ES title\n{en}");
+
+        // Only Subagentes (many items, no MCP): takes up to half without starving dashboard.
+        a.tabs[0].mcp.clear();
+        let subs_only = screen(&mut a, 120, 35);
+        assert!(subs_only.contains("╭ dashboard "), "{subs_only}");
+        assert!(subs_only.contains("◈ agent-7"), "{subs_only}");
+        assert!(!subs_only.contains("╭ MCP "), "{subs_only}");
     }
 
     #[test]
