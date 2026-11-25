@@ -697,6 +697,21 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
         }
         out.push(Line::default());
     }
+    let mcp = &app.tabs[app.current].mcp;
+    if !mcp.is_empty() {
+        out.push(Line::styled("MCP", bold(c_accent())));
+        for (s, on) in mcp {
+            let (icon, c) = if *on {
+                ("●", c_ok())
+            } else {
+                ("○", c_dim())
+            };
+            out.push(Line::styled(
+                trunc(&format!(" {icon} {} · {}", s.name, s.kind), w),
+                fg(c),
+            ));
+        }
+    }
     out
 }
 
@@ -882,8 +897,15 @@ mod tests {
     #[test]
     fn renders_dashboard_with_model_tokens_and_agents() {
         let mut a = app(vec![busy_tab(), tab("beta")]);
+        let srv = |n: &str| super::super::mcp::Server {
+            name: n.into(),
+            kind: "local",
+        };
+        a.tabs[0].mcp = vec![(srv("pg"), true), (srv("web"), false)];
         let s = screen(&mut a, 120, 35);
         for needle in [
+            "● pg · local",
+            "○ web · local",
             "claude-x",
             "(high)",
             "12.3k",

@@ -170,6 +170,13 @@ pub(super) fn spawn_tab(
     tab.cwd = cwd.clone();
     let tx2 = tx.clone();
     let disabled_mcp = super::mcp::disabled(&tab.cwd);
+    tab.mcp = super::mcp::discover(Path::new(&tab.cwd), home.as_deref())
+        .into_iter()
+        .map(|s| {
+            let on = !disabled_mcp.contains(&s.name);
+            (s, on)
+        })
+        .collect();
     let task = tokio::spawn(async move {
         if let Err(e) = run_project(i, cwd, resume, disabled_mcp, prx, crx, tx2.clone()).await {
             let _ = tx2.send((i, Msg::Failed(format!("{e:#}"))));

@@ -150,6 +150,8 @@ struct Tab {
     assigned: HashMap<String, String>,
     /// Selected row of the full dashboard, by agent name so it survives re-sorting.
     dash_sel: Option<String>,
+    /// MCP servers the session was started with, and whether each is enabled.
+    mcp: Vec<(mcp::Server, bool)>,
 }
 
 impl Drop for Tab {
@@ -192,6 +194,7 @@ impl Tab {
             defs,
             assigned,
             dash_sel: None,
+            mcp: vec![],
         }
     }
 
