@@ -22,6 +22,7 @@
 | Abrir | `o` / `Esc` | abrir la carpeta actual en una nueva pestaña / cerrar |
 | Normal | `S` | ajustes: tema (oscuro/claro) e idioma (español/English); `↑↓` elegir, `Enter`/`←→` cambiar, `Esc` cerrar. Se guarda en `~/.config/copilot-hive/settings.toml` |
 | Normal | `M` | servidores MCP del proyecto: `↑↓` elegir, `Espacio` activar/desactivar, `Enter` aplicar, `Esc` cancelar. Se guarda por carpeta en `~/.config/copilot-hive/mcp.toml` y se aplica reiniciando el proceso ACP con `--disable-mcp-server <n>` y recargando la sesión (`session/load`); allow all y modelo se restablecen. Lista los de `~/.copilot/mcp-config.json`, `.mcp.json` y `.github/mcp.json` |
+| Normal | `p` | prompts guardados localmente (`~/.config/copilot-hive/prompts.toml`, compartidos entre proyectos): `↑↓` elegir, `Enter` aplicar al editor, `n` nuevo, `s` guardar borrador actual, `e` editar, `d` borrar, `Esc` cerrar |
 | Normal | `A` | allow all on/off (pide confirmación al activar; también en el modal de permiso) |
 | Normal | `m` / `e` | selector de modelo / reasoning effort de la sesión (`session/set_config_option`) |
 | Subagentes | `Enter` | abre el prompt con «Usa el subagente <nombre> para: » (si el editor está vacío) para lanzar el agente elegido |
@@ -34,6 +35,7 @@
 | Escribiendo | `Alt+Enter` / `Shift+Enter` / `Ctrl+J` | nueva línea |
 | Escribiendo | `←→`, `Home/End`, `Ctrl+W`, `Ctrl+U` | edición |
 | Escribiendo | `Ctrl+V` | pega una imagen (PNG) del portapapeles (solo macOS, vía `osascript`); se envía como bloque `image` de ACP con el siguiente prompt. `Backspace` con el editor vacío quita la última. Se ve como `📎 ×N` en el título del prompt |
+| Escribiendo | `Ctrl+S` | guarda el borrador actual como prompt local reutilizable (abre el formulario con el texto precargado) |
 | Escribiendo | `Esc` | salir del prompt (conserva el borrador); `↑↓`/`PgUp/PgDn` hacen scroll |
 | Permiso | `y` / `n` / `a` | aprobar / rechazar / aprobar siempre (`Esc` rechaza) |
 

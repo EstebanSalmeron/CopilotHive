@@ -219,6 +219,13 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect) {
         ),
         ("Enter", tr("enviar (en el prompt)", "send (in the prompt)")),
         ("Alt+Enter / Ctrl+J", tr("nueva línea", "newline")),
+        (
+            "Ctrl+S",
+            tr(
+                "guardar el borrador como prompt reutilizable",
+                "save the draft as a reusable prompt",
+            ),
+        ),
         ("← → Home End", tr("mover el cursor", "move the cursor")),
         (
             "Ctrl+W / Ctrl+U",
@@ -279,6 +286,13 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect) {
             tr(
                 "ajustes: tema (oscuro/claro) e idioma",
                 "settings: theme (dark/light) and language",
+            ),
+        ),
+        (
+            "p",
+            tr(
+                "prompts guardados: aplicar, crear, editar o borrar",
+                "saved prompts: apply, create, edit or delete",
             ),
         ),
         (

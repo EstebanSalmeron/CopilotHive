@@ -14,6 +14,7 @@ mod markdown;
 mod mcp;
 mod modals;
 mod open;
+mod prompts;
 mod session;
 mod settings;
 mod theme;
@@ -395,6 +396,7 @@ pub struct App {
     open: Option<open::Browser>,
     settings: Option<settings::Menu>,
     mcp: Option<mcp::Menu>,
+    prompts: Option<prompts::Menu>,
     tx: Tx,
     tick: u64,
 }
@@ -505,6 +507,22 @@ impl App {
             }
             return false;
         }
+        if let Some(p) = &mut self.prompts {
+            match p.on_key(k) {
+                prompts::Action::None => {}
+                prompts::Action::Close => self.prompts = None,
+                prompts::Action::Apply(text) => {
+                    self.prompts = None;
+                    let t = &mut self.tabs[self.current];
+                    text.chars().for_each(|c| t.editor.insert(c));
+                    t.typing = true;
+                    if self.dash == Dash::Full {
+                        self.dash = Dash::Side;
+                    }
+                }
+            }
+            return false;
+        }
         if let Some(o) = &mut self.open {
             match o.on_key(code) {
                 open::Action::None => {}
@@ -582,6 +600,16 @@ impl App {
                 }
                 KeyCode::Enter => t.send_prompt(),
                 KeyCode::Char('j') if ctrl => t.editor.insert('\n'),
+                KeyCode::Char('s') if ctrl => {
+                    if t.editor.text.trim().is_empty() {
+                        t.push(Item::Note(
+                            settings::tr("el borrador está vacío", "draft is empty").into(),
+                        ));
+                    } else {
+                        let draft = t.editor.text.clone();
+                        self.prompts = Some(prompts::Menu::save_draft(draft));
+                    }
+                }
                 KeyCode::Char('v') if ctrl => match clipboard::read_png_b64() {
                     Ok(b) => t.images.push(b),
                     Err(e) => t.push(Item::Note(format!("📎 {e:#}"))),
@@ -638,6 +666,10 @@ impl App {
             KeyCode::Char('m') => self.open_selector(true),
             KeyCode::Char('e') => self.open_selector(false),
             KeyCode::Char('M') => self.mcp = Some(mcp::Menu::new(&t.name, &t.cwd)),
+            KeyCode::Char('p') => {
+                let draft = t.editor.text.clone();
+                self.prompts = Some(prompts::Menu::open(draft));
+            }
             KeyCode::Char('S') => self.settings = Some(settings::Menu::new()),
             KeyCode::Char('o') => {
                 let dir = start_dir(&t.cwd);
@@ -951,6 +983,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         open: None,
         settings: None,
         mcp: None,
+        prompts: None,
         tx,
         tick: 0,
     };
@@ -1029,6 +1062,7 @@ mod tests {
             open: None,
             settings: None,
             mcp: None,
+            prompts: None,
             tx: unbounded_channel().0,
             tick: 0,
         }
@@ -1201,5 +1235,26 @@ mod tests {
         assert_eq!(a.tabs[1].cwd, canonical.to_string_lossy());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn prompts_modal_saves_draft_and_applies_to_editor() {
+        let mut a = app(vec![tab("a"), tab("b")]);
+        // Type a draft in tab a and press Ctrl+S
+        a.on_key(key(KeyCode::Char('i')));
+        for c in "revisa el diff".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL));
+        assert!(a.prompts.is_some());
+        for c in "review".chars() {
+            a.on_key(key(KeyCode::Char(c)));
+        }
+        a.on_key(key(KeyCode::Enter)); // saves and returns to list
+        a.tabs[0].editor.take();
+        a.on_key(key(KeyCode::Enter)); // applies selected prompt to editor
+        assert!(a.prompts.is_none());
+        assert!(a.tabs[0].typing);
+        assert_eq!(a.tabs[0].editor.text, "revisa el diff");
     }
 }

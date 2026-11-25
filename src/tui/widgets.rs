@@ -175,7 +175,10 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         dash == Dash::Full,
         others_pending,
     );
-    let modal = app.confirm.is_some() || app.selector.is_some() || app.open.is_some();
+    let modal = app.confirm.is_some()
+        || app.selector.is_some()
+        || app.open.is_some()
+        || app.prompts.is_some();
     if app.confirm == Some(Confirm::AllowAll) {
         modals::draw_confirm(f, area);
     } else if let Some(s) = &app.selector {
@@ -199,6 +202,9 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     }
     if let Some(m) = &app.mcp {
         m.draw(f, area);
+    }
+    if let Some(p) = &app.prompts {
+        p.draw(f, area);
     }
     if help {
         modals::draw_help(f, area);
@@ -560,6 +566,7 @@ fn welcome() -> Vec<Line<'static>> {
             "M",
             tr("servidores MCP del proyecto", "project MCP servers"),
         ),
+        k("p", tr("prompts guardados", "saved prompts")),
     ]
 }
 
@@ -843,6 +850,7 @@ fn draw_status(
         hints(&[
             ("Enter", tr("enviar", "send")),
             ("Alt+Enter", tr("nueva línea", "newline")),
+            ("Ctrl+S", tr("guardar", "save")),
             ("Esc", tr("salir del prompt", "leave prompt")),
             ("Ctrl+W/U", tr("borrar", "delete")),
             ("PgUp/Dn", "scroll"),
@@ -864,6 +872,7 @@ fn draw_status(
             ("o", tr("abrir", "open")),
             ("S", tr("ajustes", "settings")),
             ("M", "MCP"),
+            ("p", "prompts"),
             ("H", tr("historial", "history")),
             ("m", tr("modelo", "model")),
             (
