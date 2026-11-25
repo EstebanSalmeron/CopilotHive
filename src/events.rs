@@ -119,10 +119,23 @@ impl Agent {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Tree {
     pub agents: Vec<Agent>,
     pub reasoning_effort: Option<String>,
+    month_prefix: String,
+    pub month_nano_aiu: u64,
+}
+
+impl Default for Tree {
+    fn default() -> Self {
+        Self {
+            agents: vec![],
+            reasoning_effort: None,
+            month_prefix: crate::history::current_month().prefix,
+            month_nano_aiu: 0,
+        }
+    }
 }
 
 impl Tree {
@@ -224,6 +237,12 @@ impl Tree {
                 let usage = &data["usage"];
                 let tokens = Tokens::from_usage(usage);
                 let model = usage["model"].as_str();
+                if ev["timestamp"]
+                    .as_str()
+                    .is_none_or(|ts| ts.starts_with(&self.month_prefix))
+                {
+                    self.month_nano_aiu = self.month_nano_aiu.saturating_add(tokens.nano_aiu);
+                }
                 if let Some(a) = self.agent(agent_id) {
                     a.tokens.add(tokens);
                     if let Some(m) = model {
@@ -437,5 +456,21 @@ garbage
         c.get_mut().extend_from_slice(b"d\ne\n");
         assert_eq!(read_new(&mut c, &mut off).unwrap(), ["cd", "e"]);
         assert!(read_new(&mut c, &mut off).unwrap().is_empty());
+    }
+
+    #[test]
+    fn month_nano_aiu_counts_current_month_and_skips_previous() {
+        let mut t = Tree::default();
+        t.month_prefix = "2026-11-".into();
+        for l in [
+            r#"{"type":"session.usage_record","timestamp":"2026-10-31T23:00:00Z","data":{"usage":{"copilotUsage":{"totalNanoAiu":9000}}}}"#,
+            r#"{"type":"session.usage_record","timestamp":"2026-11-01T00:00:00Z","data":{"usage":{"copilotUsage":{"totalNanoAiu":1000}}}}"#,
+            r#"{"type":"session.usage_record","timestamp":"2026-11-02T00:00:00Z","agentId":"orphan-sub","data":{"usage":{"copilotUsage":{"totalNanoAiu":250}}}}"#,
+            r#"{"type":"session.usage_record","data":{"usage":{"copilotUsage":{"totalNanoAiu":500}}}}"#,
+        ] {
+            t.apply(l);
+        }
+        assert_eq!(t.month_nano_aiu, 1750);
+        assert_eq!(t.total_tokens().nano_aiu, 10_500);
     }
 }

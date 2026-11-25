@@ -27,8 +27,11 @@ use crate::events::{Status, Tree};
 use anyhow::{Context, Result, bail};
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
-    self, Event as Term, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+    self, DisableMouseCapture, EnableMouseCapture, Event as Term, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
+use ratatui::crossterm::execute;
+use ratatui::layout::{Position, Rect};
 use ratatui::text::Line;
 use session::spawn_tab;
 use std::collections::HashMap;
@@ -49,6 +52,7 @@ enum Msg {
     Failed(String),
     History(history::Loaded),
     Open(open::Loaded),
+    MonthUsage(HashMap<String, u64>),
 }
 
 #[derive(PartialEq, Clone, Copy, Debug)]
@@ -141,6 +145,8 @@ struct Tab {
     editor: input::Editor,
     typing: bool,
     scroll: Scroll,
+    sub_scroll: SideScroll,
+    mcp_scroll: SideScroll,
     prompts: UnboundedSender<(String, Vec<String>)>,
     /// Base64 PNGs pasted into the draft, sent with the next prompt.
     images: Vec<String>,
@@ -191,6 +197,8 @@ impl Tab {
             editor: input::Editor::default(),
             typing: false,
             scroll: Scroll::default(),
+            sub_scroll: SideScroll::default(),
+            mcp_scroll: SideScroll::default(),
             prompts,
             images: vec![],
             ctl,
@@ -364,6 +372,43 @@ enum Dash {
     Hidden,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+enum Pane {
+    #[default]
+    Transcript,
+    Dashboard,
+    Subagents,
+    Mcp,
+}
+
+/// Top-down scroll state for a sidebar box (0 = top).
+#[derive(Default, Clone, Copy)]
+struct SideScroll {
+    off: usize,
+    max: usize,
+    height: usize,
+}
+
+impl SideScroll {
+    fn sync(&mut self, total: usize, height: usize) {
+        self.height = height;
+        self.max = total.saturating_sub(height);
+        self.off = self.off.min(self.max);
+    }
+
+    fn up(&mut self, n: usize) {
+        self.off = self.off.saturating_sub(n);
+    }
+
+    fn down(&mut self, n: usize) {
+        self.off = self.off.saturating_add(n).min(self.max);
+    }
+
+    fn page(&self) -> usize {
+        self.height.saturating_sub(1).max(1)
+    }
+}
+
 #[derive(PartialEq)]
 enum Confirm {
     Quit,
@@ -389,6 +434,9 @@ pub struct App {
     next_id: usize,
     current: usize,
     dash: Dash,
+    focus: Pane,
+    dash_scroll: SideScroll,
+    panes: Vec<(Pane, Rect)>,
     help: bool,
     confirm: Option<Confirm>,
     selector: Option<Selector>,
@@ -397,12 +445,39 @@ pub struct App {
     settings: Option<settings::Menu>,
     mcp: Option<mcp::Menu>,
     prompts: Option<prompts::Menu>,
+    month_label: String,
+    month_sessions: HashMap<String, u64>,
+    month_loaded: bool,
     tx: Tx,
     tick: u64,
 }
 
 impl App {
+    pub(super) fn month_credits(&self) -> f64 {
+        self.month_sessions
+            .values()
+            .copied()
+            .fold(0u64, u64::saturating_add) as f64
+            / 1e9
+    }
+
+    fn record_month(&mut self, sid: String, n: u64) {
+        if n > 0 {
+            self.month_sessions
+                .entry(sid)
+                .and_modify(|v| *v = (*v).max(n))
+                .or_insert(n);
+        }
+    }
+
     fn on_msg(&mut self, id: usize, m: Msg) {
+        if let Msg::MonthUsage(map) = m {
+            for (sid, n) in map {
+                self.record_month(sid, n);
+            }
+            self.month_loaded = true;
+            return;
+        }
         if let Msg::History(ev) = m {
             if let Some(h) = &mut self.history {
                 h.on_loaded(ev);
@@ -433,9 +508,19 @@ impl App {
                 t.push(Item::Note(note));
             }
             Msg::Perm(p) => t.perm = Some(p),
-            Msg::Lines(ls) => ls.iter().for_each(|l| t.tree.apply(l)),
+            Msg::Lines(ls) => {
+                ls.iter().for_each(|l| t.tree.apply(l));
+                if let Some(sid) = t.sid.clone() {
+                    let n = t.tree.month_nano_aiu;
+                    self.record_month(sid, n);
+                }
+            }
             Msg::Ready => t.life = Life::Ready,
-            Msg::Session(s) => t.sid = Some(s),
+            Msg::Session(s) => {
+                let n = t.tree.month_nano_aiu;
+                t.sid = Some(s.clone());
+                self.record_month(s, n);
+            }
             Msg::Done(reason) => {
                 t.busy = false;
                 t.perm = None;
@@ -451,7 +536,7 @@ impl App {
                 t.busy = false;
                 t.perm = None;
             }
-            Msg::History(_) | Msg::Open(_) => {}
+            Msg::History(_) | Msg::Open(_) | Msg::MonthUsage(_) => {}
         }
     }
 
@@ -459,6 +544,119 @@ impl App {
         self.tabs
             .iter()
             .any(|t| t.perm.is_some() || t.working() || matches!(t.life, Life::Starting))
+    }
+
+    fn has_modal(&self) -> bool {
+        self.help
+            || self.confirm.is_some()
+            || self.selector.is_some()
+            || self.history.is_some()
+            || self.open.is_some()
+            || self.settings.is_some()
+            || self.mcp.is_some()
+            || self.prompts.is_some()
+            || self.tabs[self.current].perm.is_some()
+    }
+
+    fn cycle_focus(&mut self, delta: isize) {
+        if self.dash != Dash::Side || self.panes.len() < 2 {
+            return;
+        }
+        let i = self
+            .panes
+            .iter()
+            .position(|(p, _)| *p == self.focus)
+            .unwrap_or(0);
+        let n = self.panes.len() as isize;
+        let next = (i as isize + delta).rem_euclid(n) as usize;
+        self.focus = self.panes[next].0;
+    }
+
+    fn pane_at(&self, col: u16, row: u16) -> Option<Pane> {
+        let pos = Position::new(col, row);
+        self.panes
+            .iter()
+            .find(|(_, r)| r.contains(pos))
+            .map(|(p, _)| *p)
+    }
+
+    fn side_scroll_mut(&mut self, pane: Pane) -> Option<&mut SideScroll> {
+        match pane {
+            Pane::Transcript => None,
+            Pane::Dashboard => Some(&mut self.dash_scroll),
+            Pane::Subagents => Some(&mut self.tabs[self.current].sub_scroll),
+            Pane::Mcp => Some(&mut self.tabs[self.current].mcp_scroll),
+        }
+    }
+
+    fn scroll_pane(&mut self, pane: Pane, delta: isize) {
+        if let Some(s) = self.side_scroll_mut(pane) {
+            if delta < 0 {
+                s.up(delta.unsigned_abs());
+            } else {
+                s.down(delta as usize);
+            }
+        } else {
+            let s = &mut self.tabs[self.current].scroll;
+            if delta < 0 {
+                s.up(delta.unsigned_abs());
+            } else {
+                s.down(delta as usize);
+            }
+        }
+    }
+
+    fn scroll_pane_page(&mut self, pane: Pane, up: bool) {
+        let step = match self.side_scroll_mut(pane) {
+            Some(s) => s.page(),
+            None => self.tabs[self.current].scroll.page(),
+        } as isize;
+        self.scroll_pane(pane, if up { -step } else { step });
+    }
+
+    fn scroll_pane_edge(&mut self, pane: Pane, top: bool) {
+        if let Some(s) = self.side_scroll_mut(pane) {
+            s.off = if top { 0 } else { s.max };
+        } else {
+            let s = &mut self.tabs[self.current].scroll;
+            if top {
+                s.up(usize::MAX / 2);
+            } else {
+                s.off = 0;
+            }
+        }
+    }
+
+    /// Returns true if the screen needs a redraw.
+    fn on_mouse(&mut self, m: MouseEvent) -> bool {
+        if self.has_modal() || self.dash == Dash::Full {
+            return false;
+        }
+        match m.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                let Some(p) = self.pane_at(m.column, m.row) else {
+                    return false;
+                };
+                let changed = self.focus != p;
+                self.focus = p;
+                if p != Pane::Transcript && self.tabs[self.current].typing {
+                    self.tabs[self.current].typing = false;
+                    return true;
+                }
+                changed
+            }
+            MouseEventKind::ScrollUp => {
+                let target = self.pane_at(m.column, m.row).unwrap_or(self.focus);
+                self.scroll_pane(target, -3);
+                true
+            }
+            MouseEventKind::ScrollDown => {
+                let target = self.pane_at(m.column, m.row).unwrap_or(self.focus);
+                self.scroll_pane(target, 3);
+                true
+            }
+            _ => false,
+        }
     }
 
     fn switch(&mut self, to: usize) {
@@ -516,6 +714,7 @@ impl App {
                     let t = &mut self.tabs[self.current];
                     text.chars().for_each(|c| t.editor.insert(c));
                     t.typing = true;
+                    self.focus = Pane::Transcript;
                     if self.dash == Dash::Full {
                         self.dash = Dash::Side;
                     }
@@ -585,14 +784,19 @@ impl App {
             }
             return false;
         }
+        let scroll_target = if t.typing {
+            Pane::Transcript
+        } else {
+            self.focus
+        };
         match code {
             KeyCode::Up | KeyCode::Down if self.dash == Dash::Full && !t.typing => {
                 self.move_dash_sel(if code == KeyCode::Up { -1 } else { 1 });
             }
-            KeyCode::PageUp => t.scroll.up(t.scroll.page()),
-            KeyCode::PageDown => t.scroll.down(t.scroll.page()),
-            KeyCode::Up => t.scroll.up(1),
-            KeyCode::Down => t.scroll.down(1),
+            KeyCode::PageUp => self.scroll_pane_page(scroll_target, true),
+            KeyCode::PageDown => self.scroll_pane_page(scroll_target, false),
+            KeyCode::Up => self.scroll_pane(scroll_target, -1),
+            KeyCode::Down => self.scroll_pane(scroll_target, 1),
             _ if t.typing => match code {
                 KeyCode::Esc => t.typing = false,
                 KeyCode::Enter if alt || mods.contains(KeyModifiers::SHIFT) => {
@@ -628,10 +832,12 @@ impl App {
                 KeyCode::End => t.editor.end(),
                 _ => {}
             },
-            KeyCode::Home => t.scroll.up(usize::MAX / 2),
-            KeyCode::End => t.scroll.off = 0,
-            KeyCode::Char('k') => t.scroll.up(1),
-            KeyCode::Char('j') => t.scroll.down(1),
+            KeyCode::Home => self.scroll_pane_edge(self.focus, true),
+            KeyCode::End => self.scroll_pane_edge(self.focus, false),
+            KeyCode::Char('k') => self.scroll_pane(self.focus, -1),
+            KeyCode::Char('j') => self.scroll_pane(self.focus, 1),
+            KeyCode::Char(']') => self.cycle_focus(1),
+            KeyCode::Char('[') => self.cycle_focus(-1),
             KeyCode::Char('q') => {
                 if self.tabs.iter().any(Tab::working) {
                     self.confirm = Some(Confirm::Quit);
@@ -652,6 +858,9 @@ impl App {
                 self.dash = match self.dash {
                     Dash::Side | Dash::Full => Dash::Hidden,
                     Dash::Hidden => Dash::Side,
+                };
+                if self.dash != Dash::Side {
+                    self.focus = Pane::Transcript;
                 }
             }
             KeyCode::Char('s') => {
@@ -659,6 +868,9 @@ impl App {
                     Dash::Side
                 } else {
                     Dash::Full
+                };
+                if self.dash != Dash::Side {
+                    self.focus = Pane::Transcript;
                 }
             }
             KeyCode::Char('A') if t.allow_all => t.set_allow_all(false),
@@ -703,6 +915,7 @@ impl App {
                     }
                 }
                 t.typing = true;
+                self.focus = Pane::Transcript;
                 if self.dash == Dash::Full {
                     self.dash = Dash::Side;
                 }
@@ -712,6 +925,7 @@ impl App {
                     "/fleet ".chars().for_each(|c| t.editor.insert(c));
                 }
                 t.typing = true;
+                self.focus = Pane::Transcript;
                 if self.dash == Dash::Full {
                     self.dash = Dash::Side;
                 }
@@ -971,11 +1185,27 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         }
         tabs.push(tab);
     }
+    let month = crate::history::current_month();
+    {
+        let tx = tx.clone();
+        let prefix = month.prefix;
+        // 1-day safety margin around UTC month boundary for filesystem mtimes.
+        let min_mtime = month.start.checked_sub(Duration::from_secs(86_400));
+        tokio::task::spawn_blocking(move || {
+            let map = crate::history::root()
+                .map(|r| crate::history::month_usage(&r, &prefix, min_mtime))
+                .unwrap_or_default();
+            let _ = tx.send((0, Msg::MonthUsage(map)));
+        });
+    }
     let mut app = App {
         next_id: tabs.len(),
         tabs,
         current: 0,
         dash: Dash::Side,
+        focus: Pane::Transcript,
+        dash_scroll: SideScroll::default(),
+        panes: vec![],
         help: false,
         confirm: None,
         selector: None,
@@ -984,12 +1214,32 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         settings: None,
         mcp: None,
         prompts: None,
+        month_label: month.label,
+        month_sessions: HashMap::new(),
+        month_loaded: false,
         tx,
         tick: 0,
     };
-    // ratatui::init installs a panic hook that restores the terminal.
+    struct MouseGuard;
+    impl Drop for MouseGuard {
+        fn drop(&mut self) {
+            let _ = execute!(std::io::stdout(), DisableMouseCapture);
+        }
+    }
+    // ratatui::init installs a panic hook that restores the terminal; wrap it to also disable mouse capture.
     let mut term = ratatui::init();
-    let r = event_loop(&mut term, &mut app, &mut rx).await;
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(std::io::stdout(), DisableMouseCapture);
+        prev_hook(info);
+    }));
+    let r = match execute!(std::io::stdout(), EnableMouseCapture) {
+        Ok(()) => {
+            let _mouse = MouseGuard;
+            event_loop(&mut term, &mut app, &mut rx).await
+        }
+        Err(e) => Err(e.into()),
+    };
     ratatui::restore();
     r
 }
@@ -1016,6 +1266,11 @@ async fn event_loop(
                         return Ok(());
                     }
                 }
+                Term::Mouse(m) => {
+                    if app.on_mouse(m) {
+                        dirty = true;
+                    }
+                }
                 Term::Resize(..) => dirty = true,
                 _ => {}
             }
@@ -1027,6 +1282,7 @@ async fn event_loop(
             dirty |= app.animating()
                 || widgets::eyes_closed(app.tick, false)
                 || widgets::eyes_closed(app.tick - 1, false)
+                || widgets::patrol_idle_tick(app.tick)
                 || widgets::quip(app.tick).is_some() != widgets::quip(app.tick - 1).is_some();
         }
         if std::mem::take(&mut dirty) {
@@ -1055,6 +1311,9 @@ mod tests {
             tabs,
             current: 0,
             dash: Dash::Side,
+            focus: Pane::Transcript,
+            dash_scroll: SideScroll::default(),
+            panes: vec![],
             help: false,
             confirm: None,
             selector: None,
@@ -1063,6 +1322,9 @@ mod tests {
             settings: None,
             mcp: None,
             prompts: None,
+            month_label: crate::history::current_month().label,
+            month_sessions: HashMap::new(),
+            month_loaded: false,
             tx: unbounded_channel().0,
             tick: 0,
         }
@@ -1294,5 +1556,77 @@ mod tests {
         assert!(a.dash == Dash::Side);
         assert!(a.tabs[0].typing);
         assert_eq!(a.tabs[0].editor.text, "haz audit");
+    }
+
+    #[test]
+    fn month_usage_merges_live_without_double_counting_and_survives_close() {
+        let mut a = app(vec![tab("a"), tab("b")]);
+        assert!(!a.month_loaded);
+
+        // Live events arrive on tab 0 before disk scan finishes.
+        a.on_msg(0, Msg::Session("s-live".into()));
+        let u = |n: u64| {
+            format!(
+                r#"{{"type":"session.usage_record","data":{{"usage":{{"copilotUsage":{{"totalNanoAiu":{n}}}}}}}}}"#
+            )
+        };
+        a.on_msg(0, Msg::Lines(vec![u(1_500_000_000)]));
+        assert_eq!(a.month_sessions.get("s-live"), Some(&1_500_000_000));
+
+        // Background scan returns an older/smaller snapshot for s-live + another closed session.
+        let mut disk = HashMap::new();
+        disk.insert("s-live".into(), 1_000_000_000);
+        disk.insert("s-other".into(), 2_500_000_000);
+        a.on_msg(0, Msg::MonthUsage(disk));
+        assert!(a.month_loaded);
+        // No double counting; keeps max for s-live + adds s-other = 4.0 cr.
+        assert!((a.month_credits() - 4.0).abs() < 1e-9);
+
+        // More live usage updates s-live in place (no double counting).
+        a.on_msg(0, Msg::Lines(vec![u(500_000_000)]));
+        assert!((a.month_credits() - 4.5).abs() < 1e-9);
+
+        // Closing tab 0 preserves its accumulated monthly usage.
+        a.on_key(key(KeyCode::Char('x')));
+        assert_eq!(a.tabs.len(), 1);
+        assert!((a.month_credits() - 4.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn month_usage_handles_lines_before_session_resumed_replay_and_closed_tab0() {
+        let cur = crate::history::current_month();
+        let u = |ts: &str, n: u64| {
+            format!(
+                r#"{{"type":"session.usage_record","timestamp":"{ts}","data":{{"usage":{{"copilotUsage":{{"totalNanoAiu":{n}}}}}}}}}"#
+            )
+        };
+        let cur_ts = format!("{}01T12:00:00Z", cur.prefix);
+        let old_ts = "1999-12-31T23:59:59Z";
+
+        // Lines arrive before Session id is known; recorded once Session arrives.
+        let mut a = app(vec![tab("a"), tab("b")]);
+        a.on_msg(0, Msg::Lines(vec![u(&cur_ts, 700_000_000)]));
+        assert!(a.month_sessions.is_empty());
+        a.on_msg(0, Msg::Session("s-early".into()));
+        assert_eq!(a.month_sessions.get("s-early"), Some(&700_000_000));
+
+        // Close tab 0 before Msg::MonthUsage arrives: scan result is still applied.
+        a.on_key(key(KeyCode::Char('x')));
+        let mut disk = HashMap::new();
+        disk.insert("s-resumed".into(), 2_000_000_000);
+        a.on_msg(0, Msg::MonthUsage(disk));
+        assert!(a.month_loaded);
+        assert!((a.month_credits() - 2.7).abs() < 1e-9);
+
+        // Resumed session replays previous-month + partial current-month without dipping, then grows.
+        let tid = a.tabs[0].id;
+        a.on_msg(tid, Msg::Session("s-resumed".into()));
+        a.on_msg(
+            tid,
+            Msg::Lines(vec![u(old_ts, 9_000_000_000), u(&cur_ts, 1_000_000_000)]),
+        );
+        assert!((a.month_credits() - 2.7).abs() < 1e-9);
+        a.on_msg(tid, Msg::Lines(vec![u(&cur_ts, 1_500_000_000)]));
+        assert!((a.month_credits() - 3.2).abs() < 1e-9);
     }
 }

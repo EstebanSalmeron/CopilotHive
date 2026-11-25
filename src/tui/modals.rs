@@ -247,13 +247,20 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect) {
         ),
         (
             "↑ ↓ PgUp PgDn",
-            tr("scroll de la transcripción", "scroll the transcript"),
+            tr("scroll del panel activo", "scroll the focused panel"),
         ),
         (
             "Home / End",
             tr(
                 "inicio / final (End reanuda el autoscroll)",
                 "top / bottom (End resumes autoscroll)",
+            ),
+        ),
+        (
+            "] / [ / click",
+            tr(
+                "cambiar foco entre paneles (rueda: scroll)",
+                "cycle focused panel (wheel: scroll)",
             ),
         ),
         (

@@ -3,7 +3,7 @@ use super::markdown::{render, wrap};
 use super::modals;
 use super::settings::{self, tr};
 use super::theme::*;
-use super::{App, Cache, Confirm, Dash, Item, Life, Tab, ToolState, dashboard};
+use super::{App, Cache, Confirm, Dash, Item, Life, Pane, SideScroll, Tab, ToolState, dashboard};
 use crate::events::Status;
 use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
@@ -105,6 +105,8 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     let area = f.area();
     f.render_widget(Block::new().style(Style::new().bg(c_bg()).fg(c_fg())), area);
     if area.width < MIN_W || area.height < MIN_H {
+        app.panes.clear();
+        app.focus = Pane::Transcript;
         let msg = tr_fmt!(
             "Terminal demasiado pequeña ({}x{})\nSe necesitan al menos {MIN_W}x{MIN_H}",
             "Terminal too small ({}x{})\nAt least {MIN_W}x{MIN_H} needed",
@@ -127,7 +129,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         .filter(|(i, t)| *i != app.current && t.perm.is_some())
         .count();
     let (dash, help) = (app.dash, app.help);
-    draw_tabs(app, f, tick, area);
+    let modal_open = app.has_modal();
     let side_lines = (dash == Dash::Side && area.width >= SIDEBAR_MIN_TOTAL).then(|| {
         let w = SIDEBAR_W as usize - 2;
         (
@@ -136,10 +138,14 @@ pub fn draw(app: &mut App, f: &mut Frame) {
             mcp_lines(&app.tabs[app.current], w),
         )
     });
-    let t = &mut app.tabs[app.current];
     let in_w = area.width.saturating_sub(2) as usize;
-    let in_rows = t.editor.layout(in_w).0.len().clamp(1, 6) as u16;
-    let [_, _, info, _, body, input, status] = Layout::vertical([
+    let in_rows = app.tabs[app.current]
+        .editor
+        .layout(in_w)
+        .0
+        .len()
+        .clamp(1, 6) as u16;
+    let [header, _, info, _, body, input, status] = Layout::vertical([
         Constraint::Length(7),
         Constraint::Length(1),
         Constraint::Length(1),
@@ -149,7 +155,8 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         Constraint::Length(1),
     ])
     .areas(area);
-    draw_info(t, f, info, tick);
+    draw_tabs(app, f, tick, header);
+    draw_info(&app.tabs[app.current], f, info, tick);
     let (main, side) = if dash == Dash::Side && area.width >= SIDEBAR_MIN_TOTAL {
         let [a, b] =
             Layout::horizontal([Constraint::Min(30), Constraint::Length(SIDEBAR_W)]).areas(body);
@@ -159,15 +166,49 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     };
     let mut cursor = None;
     if dash == Dash::Full {
-        dashboard::draw(t, f, body.union(input), tick);
+        app.panes.clear();
+        app.focus = Pane::Transcript;
+        dashboard::draw(&app.tabs[app.current], f, body.union(input), tick);
     } else {
-        draw_transcript(t, f, main, tick);
-        if let Some(s) = side {
+        app.panes.clear();
+        app.panes.push((Pane::Transcript, main));
+        let side_parts = side.map(|s| {
             let (l, sub, m) = side_lines.unwrap_or_default();
-            draw_sidebar(l, sub, m, f, s);
+            let (top, mid, bottom, hs, hm) = sidebar_layout(&sub, &m, s);
+            app.panes.push((Pane::Dashboard, top));
+            if hs > 0 {
+                app.panes.push((Pane::Subagents, mid));
+            }
+            if hm > 0 {
+                app.panes.push((Pane::Mcp, bottom));
+            }
+            (l, sub, m, top, mid, bottom, hs, hm)
+        });
+        if !app.panes.iter().any(|(p, _)| *p == app.focus) {
+            app.focus = Pane::Transcript;
         }
-        cursor = draw_input(t, f, input);
+        let active = !app.tabs[app.current].typing && !modal_open;
+        let focus = app.focus;
+        draw_transcript(
+            &mut app.tabs[app.current],
+            f,
+            main,
+            tick,
+            active && focus == Pane::Transcript,
+        );
+        if let Some((l, sub, m, top, mid, bottom, hs, hm)) = side_parts {
+            let t = &mut app.tabs[app.current];
+            draw_sidebar(
+                (l, sub, m),
+                (top, mid, bottom, hs, hm),
+                (&mut app.dash_scroll, &mut t.sub_scroll, &mut t.mcp_scroll),
+                active.then_some(focus),
+                f,
+            );
+        }
+        cursor = draw_input(&app.tabs[app.current], f, input);
     }
+    let t = &app.tabs[app.current];
     draw_status(
         t,
         f,
@@ -176,17 +217,13 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         dash == Dash::Full,
         others_pending,
     );
-    let modal = app.confirm.is_some()
-        || app.selector.is_some()
-        || app.open.is_some()
-        || app.prompts.is_some();
     if app.confirm == Some(Confirm::AllowAll) {
         modals::draw_confirm(f, area);
     } else if let Some(s) = &app.selector {
         modals::draw_selector(s, f, area);
     } else if t.perm.is_some() {
         modals::draw_perm(t, f, area, tick, others_pending);
-    } else if let Some(pos) = cursor.filter(|_| t.typing && !help && !modal) {
+    } else if let Some(pos) = cursor.filter(|_| t.typing && !modal_open) {
         f.set_cursor_position(pos);
     }
     if let Some(h) = &mut app.history {
@@ -247,26 +284,6 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
         .iter()
         .map(|t| t.tree.total_tokens().credits())
         .sum();
-    let blk = block(Line::default(), c_border());
-    let inner = blk.inner(area);
-    f.render_widget(blk, area);
-    let logo_lines = logo();
-    let logo_w = logo_lines.iter().map(Line::width).max().unwrap_or(0) as u16;
-    let logo_w = if inner.width >= logo_w + 11 + 50 {
-        logo_w
-    } else {
-        0
-    };
-    let [left, right, logo_a] = Layout::horizontal([
-        Constraint::Length(11),
-        Constraint::Min(10),
-        Constraint::Length(logo_w),
-    ])
-    .areas(inner);
-    f.render_widget(Paragraph::new(robot(tick, working > 0)), left);
-    if logo_w > 0 {
-        f.render_widget(Paragraph::new(logo_lines), logo_a);
-    }
     let summary = Line::from(vec![
         Span::styled(
             tr_fmt!("{} proyectos", "{} projects", app.tabs.len()),
@@ -285,23 +302,152 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
         Span::styled(" · ", fg(c_border())),
         Span::styled(cost(credits), fg(c_orange())),
     ]);
-    let title = match quip(tick) {
+    let quip_line = match quip(tick) {
         Some(q) => Line::from(vec![
             Span::styled("◀ ", fg(c_attention())),
             Span::styled(format!("“{q}”"), Style::new().fg(c_attention()).italic()),
         ]),
-        None => Line::styled(tr("◆ centro de mando", "◆ command center"), fg(c_dim())),
+        None => Line::default(),
     };
+    let tabs_line = Line::from(spans);
+    let content_w = quip_line
+        .width()
+        .max(summary.width())
+        .max(tabs_line.width());
+
+    const MONTH_W: u16 = 24;
+    const PATROL_BOX_W: u16 = 28;
+    let logo_lines = logo();
+    let logo_box_w = logo_lines.iter().map(Line::width).max().unwrap_or(0) as u16 + 4;
+    let month_w = if area.width >= 13 + 26 + MONTH_W {
+        MONTH_W
+    } else {
+        0
+    };
+    let logo_w = if area.width >= 13 + 50 + month_w + logo_box_w {
+        logo_box_w
+    } else {
+        0
+    };
+    let cmd_min = 13 + content_w.max(36);
+    let patrol_box_w = if (area.width as usize)
+        >= cmd_min + month_w as usize + logo_w as usize + PATROL_BOX_W as usize
+    {
+        PATROL_BOX_W
+    } else {
+        0
+    };
+    let [cmd_a, patrol_box_a, month_a, logo_a] = Layout::horizontal([
+        Constraint::Min(24),
+        Constraint::Length(patrol_box_w),
+        Constraint::Length(month_w),
+        Constraint::Length(logo_w),
+    ])
+    .areas(area);
+
+    let cmd_blk = block(
+        Line::styled(
+            tr(" ◆ centro de mando ", " ◆ command center "),
+            bold(c_accent()),
+        ),
+        c_border(),
+    );
+    let cmd_inner = cmd_blk.inner(cmd_a);
+    f.render_widget(cmd_blk, cmd_a);
+    let [left, right] =
+        Layout::horizontal([Constraint::Length(11), Constraint::Min(10)]).areas(cmd_inner);
+    f.render_widget(Paragraph::new(robot(tick, working > 0)), left);
     f.render_widget(
         Paragraph::new(vec![
-            title,
+            quip_line,
             Line::default(),
             summary,
             Line::default(),
-            Line::from(spans),
+            tabs_line,
         ]),
         right,
     );
+
+    if patrol_box_w > 0 {
+        let pending_perm = app.tabs.iter().any(|t| t.perm.is_some());
+        let (title, border) = if pending_perm {
+            let b = if blink_on(tick) {
+                c_attention()
+            } else {
+                c_orange()
+            };
+            (
+                Line::styled(tr(" ⚠ alerta ", " ⚠ alert "), bold(c_attention())),
+                b,
+            )
+        } else if working > 0 {
+            (
+                Line::styled(tr(" ✦ colmena ", " ✦ hive "), bold(c_running())),
+                c_border(),
+            )
+        } else {
+            (
+                Line::styled(tr(" ☾ reposo ", " ☾ idle "), fg(c_dim())),
+                c_border(),
+            )
+        };
+        let p_blk = block(title, border);
+        let p_inner = p_blk.inner(patrol_box_a);
+        f.render_widget(
+            Paragraph::new(patrol(
+                tick,
+                working > 0,
+                subs,
+                pending_perm,
+                p_inner.width as usize,
+            ))
+            .block(p_blk),
+            patrol_box_a,
+        );
+    }
+
+    if month_w > 0 {
+        let sub = Line::styled(tr("todos los proyectos", "all projects"), fg(c_dim()));
+        let rows = if !app.month_loaded && app.month_sessions.is_empty() {
+            vec![
+                Line::default(),
+                Line::styled(tr("calculando…", "calculating…"), fg(c_dim())),
+                Line::default(),
+                sub,
+                Line::default(),
+            ]
+        } else {
+            let (cr, usd) = cost_parts(app.month_credits());
+            vec![
+                Line::default(),
+                Line::styled(cr, bold(c_orange())),
+                Line::styled(usd, bold(c_attention())),
+                Line::default(),
+                sub,
+            ]
+        };
+        let month_blk = block(
+            Line::styled(
+                tr_fmt!(" mes {} ", " month {} ", app.month_label),
+                bold(c_accent()),
+            ),
+            c_border(),
+        );
+        f.render_widget(
+            Paragraph::new(rows)
+                .alignment(Alignment::Center)
+                .block(month_blk),
+            month_a,
+        );
+    }
+    if logo_w > 0 {
+        f.render_widget(
+            Paragraph::new(logo_lines)
+                .alignment(Alignment::Center)
+                .block(block(Line::default(), c_border())),
+            logo_a,
+        );
+    }
 }
 
 const QUIPS: [(&str, &str); 8] = [
@@ -368,7 +514,6 @@ fn logo() -> Vec<Line<'static>> {
                 Span::styled(HIVE[i], bold(c_accent())),
                 Span::styled(format!("   {:<13}", tag[i]), fg(c_orange())),
                 Span::styled(format!(" {}", SIDE[4 - i].trim_end()), fg(c_orange())),
-                Span::raw("    "),
             ])
         })
         .collect()
@@ -377,6 +522,216 @@ fn logo() -> Vec<Line<'static>> {
 /// Eyes are closed for 2 ticks every 40 (idle) or 15 (working).
 pub(super) fn eyes_closed(tick: u64, working: bool) -> bool {
     tick % if working { 15 } else { 40 } < 2
+}
+
+/// True on ticks where the idle patrol's `z`/`zZ` toggles.
+pub(super) fn patrol_idle_tick(tick: u64) -> bool {
+    tick.is_multiple_of(20)
+}
+
+/// 5-row mini-bot patrol scene rendered inside its own header box when space allows.
+fn patrol(
+    tick: u64,
+    working: bool,
+    subs: usize,
+    pending_perm: bool,
+    w: usize,
+) -> Vec<Line<'static>> {
+    if w < 7 {
+        return vec![
+            Line::default(),
+            Line::default(),
+            Line::default(),
+            Line::default(),
+            Line::styled("·".repeat(w), fg(c_border())),
+        ];
+    }
+    let mut grid = [
+        vec![(' ', Style::default()); w],
+        vec![(' ', Style::default()); w],
+        vec![(' ', Style::default()); w],
+        vec![(' ', Style::default()); w],
+        vec![(' ', Style::default()); w],
+    ];
+    let put = |row: &mut [(char, Style)], col: usize, s: &str, st: Style| {
+        for (i, ch) in s.chars().enumerate() {
+            if let Some(cell) = row.get_mut(col + i) {
+                *cell = (ch, st);
+            }
+        }
+    };
+
+    if pending_perm {
+        let x = (w - 7) / 2;
+        let on = blink_on(tick);
+        let c = c_attention();
+        let warn_st = if on { bold(c) } else { fg(c_orange()) };
+        let sp_st = if on { bold(c_orange()) } else { fg(c_dim()) };
+        let (sp, alt) = if on { ("✦", "✧") } else { ("✧", "✦") };
+        put(&mut grid[0], x, sp, sp_st);
+        put(&mut grid[0], x + 3, "⚠", warn_st);
+        put(&mut grid[0], x + 6, sp, sp_st);
+        put(&mut grid[1], x, "\\▄███▄/", fg(c));
+        if x >= 2 {
+            put(&mut grid[2], x - 2, alt, sp_st);
+            put(&mut grid[2], x + 8, alt, sp_st);
+        }
+        put(&mut grid[2], x + 1, "█", fg(c));
+        put(&mut grid[2], x + 2, "◉ ◉", bold(c_orange()));
+        put(&mut grid[2], x + 5, "█", fg(c));
+        put(&mut grid[3], x + 1, "▀███▀", fg(c));
+        for cell in &mut grid[4] {
+            *cell = ('═', fg(c_border()));
+        }
+        if w >= 12 {
+            grid[4][0] = ('╠', fg(c_dim()));
+            grid[4][w - 1] = ('╣', fg(c_dim()));
+        }
+        put(&mut grid[4], x + 2, "┴ ┴", fg(c));
+    } else if working {
+        let span = w - 6;
+        let step = (tick / 2) as usize;
+        let pos = step % (span * 2);
+        let (x, right) = if pos < span {
+            (pos, true)
+        } else {
+            (span * 2 - pos, false)
+        };
+        let c = c_running();
+        let body_x = if right { x } else { x + 1 };
+
+        // Twinkling sky stars (antenna draws over them when passing).
+        for (i, sx) in (2..w).step_by(6).enumerate() {
+            let (ch, st) = match ((tick / 4) as usize + i) % 4 {
+                0 => ('✦', fg(c_attention())),
+                1 => ('✧', fg(c_dim())),
+                2 => ('⋆', fg(c)),
+                _ => ('·', fg(c_border())),
+            };
+            grid[0][sx] = (ch, st);
+        }
+
+        // Animated conveyor belt moving in the bot's travel direction.
+        let arrow = if right { '»' } else { '«' };
+        let shift = step % 4;
+        for (col, cell) in grid[4].iter_mut().enumerate() {
+            let phase = if right {
+                (col + 4 - shift) % 4
+            } else {
+                (col + shift) % 4
+            };
+            *cell = match phase {
+                0 => (arrow, fg(c_dim())),
+                2 => ('·', fg(c_border())),
+                _ => ('═', fg(c_border())),
+            };
+        }
+        if w >= 12 {
+            grid[4][0] = ('╠', fg(c_dim()));
+            grid[4][w - 1] = ('╣', fg(c_dim()));
+        }
+
+        let ant = if step.is_multiple_of(2) { "*" } else { "⌁" };
+        let feet = if step.is_multiple_of(2) {
+            "╯ ╰"
+        } else {
+            "╰ ╯"
+        };
+        let spark = if step.is_multiple_of(2) { "✦" } else { "✧" };
+        put(&mut grid[0], body_x + 2, ant, bold(c_attention()));
+        put(&mut grid[1], body_x, "▄███▄", fg(c));
+        put(&mut grid[2], body_x, "█", fg(c));
+        put(&mut grid[2], body_x + 1, "◉ ◉", bold(c_attention()));
+        put(&mut grid[2], body_x + 4, "█", fg(c));
+        put(
+            &mut grid[2],
+            if right { x + 5 } else { x },
+            "▓",
+            fg(c_orange()),
+        );
+        put(&mut grid[3], body_x, "▀███▀", fg(c));
+        if right && x >= 1 {
+            put(&mut grid[3], x - 1, spark, fg(c_attention()));
+        } else if !right && x + 6 < w {
+            put(&mut grid[3], x + 6, spark, fg(c_attention()));
+        }
+        put(&mut grid[4], body_x + 1, feet, fg(c));
+
+        if subs > 0 {
+            let dx = if right {
+                (x >= 4).then(|| x.saturating_sub(5))
+            } else if x + 11 <= w {
+                Some(x + 8)
+            } else if x + 10 <= w {
+                Some(x + 7)
+            } else {
+                None
+            };
+            if let Some(dx) = dx {
+                let d_even = (tick / 3).is_multiple_of(2);
+                let row = if d_even { 1 } else { 2 };
+                put(&mut grid[row], dx, "[•]", bold(c_purple()));
+                let glint = if d_even { "✦" } else { "·" };
+                if right && dx >= 1 {
+                    put(&mut grid[row], dx - 1, glint, fg(c_purple()));
+                } else if !right && dx + 3 < w {
+                    put(&mut grid[row], dx + 3, glint, fg(c_purple()));
+                }
+            }
+        }
+    } else {
+        let x = (w - 7) / 2;
+        let c = c_ok();
+        let phase = (tick / 20).is_multiple_of(2);
+        if w >= 12 {
+            grid[0][1] = ('☾', fg(c_attention()));
+        }
+        if w >= 16 {
+            grid[0][5] = (if phase { '⋆' } else { '·' }, fg(c_dim()));
+            grid[0][w - 3] = (if phase { '·' } else { '⋆' }, fg(c_dim()));
+        }
+        if w >= 20 {
+            grid[1][3] = (if phase { '·' } else { '⋆' }, fg(c_border()));
+            grid[1][w - 4] = (if phase { '⋆' } else { '·' }, fg(c_border()));
+        }
+        put(
+            &mut grid[0],
+            x + 5,
+            if phase { "z " } else { "zZ" },
+            fg(c_dim()),
+        );
+        put(&mut grid[1], x, "▄███▄", fg(c));
+        put(&mut grid[2], x, "█", fg(c));
+        put(&mut grid[2], x + 1, "- -", fg(c_dim()));
+        put(&mut grid[2], x + 4, "█", fg(c));
+        put(&mut grid[3], x, "▀███▀", fg(c));
+        for (col, cell) in grid[4].iter_mut().enumerate() {
+            let ch = match col % 4 {
+                0 => '─',
+                2 => '·',
+                _ => ' ',
+            };
+            *cell = (ch, fg(c_border()));
+        }
+        put(&mut grid[4], x + 1, "┴ ┴", fg(c));
+    }
+
+    grid.into_iter()
+        .map(|row| {
+            let mut spans = vec![];
+            let mut i = 0;
+            while i < row.len() {
+                let st = row[i].1;
+                let mut s = String::new();
+                while i < row.len() && row[i].1 == st {
+                    s.push(row[i].0);
+                    i += 1;
+                }
+                spans.push(Span::styled(s, st));
+            }
+            Line::from(spans)
+        })
+        .collect()
 }
 
 /// 5-row robot: fixed eyes that blink; working = color + blinking antenna.
@@ -571,7 +926,7 @@ fn welcome() -> Vec<Line<'static>> {
     ]
 }
 
-fn draw_transcript(t: &mut Tab, f: &mut Frame, area: Rect, tick: u64) {
+fn draw_transcript(t: &mut Tab, f: &mut Frame, area: Rect, tick: u64, focused: bool) {
     let busy = t.working();
     let (state, c) = match &t.life {
         Life::Failed(_) => ("error".to_string(), c_error()),
@@ -584,14 +939,16 @@ fn draw_transcript(t: &mut Tab, f: &mut Frame, area: Rect, tick: u64) {
     };
     let border = if t.perm.is_some() {
         c_attention()
-    } else {
+    } else if focused {
         c_accent()
+    } else {
+        c_border()
     };
     let title = Line::from(vec![
         Span::styled(format!(" {} ", t.name), bold(c_fg())),
         Span::styled(format!("· {state} "), fg(c)),
     ]);
-    let blk = block(title, if t.typing { c_border() } else { border });
+    let blk = block(title, border);
     let inner = blk.inner(area);
     let width = inner.width.max(1) as usize;
     let lines: Cow<[Line<'static>]> = match &t.life {
@@ -680,7 +1037,7 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
         let mut head = vec![
             status_icon(t, tick),
             Span::styled(
-                format!(" {}", trunc(&t.name, w.saturating_sub(14))),
+                format!(" {}", t.name),
                 if cur { bold(c_accent()) } else { bold(c_fg()) },
             ),
         ];
@@ -690,11 +1047,14 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
                 fg(c_orange()),
             ));
         }
-        out.push(Line::from(head));
+        out.extend(wrap(&Line::from(head), w));
         if t.perm.is_some() {
-            out.push(Line::styled(
-                tr("  ⚠ permiso pendiente", "  ⚠ permission pending"),
-                bold(c_attention()),
+            out.extend(wrap(
+                &Line::styled(
+                    tr("  ⚠ permiso pendiente", "  ⚠ permission pending"),
+                    bold(c_attention()),
+                ),
+                w,
             ));
         }
         let n = t.tree.agents.len();
@@ -715,12 +1075,12 @@ fn sidebar_lines(app: &App, w: usize, tick: u64) -> Vec<Line<'static>> {
                     a.tokens.credits() * 0.01
                 ));
             }
-            out.push(Line::styled(trunc(&text, w), fg(c)));
+            out.extend(wrap(&Line::styled(text, fg(c)), w));
             if let (Some(tool), Status::Running) = (&a.current_tool, a.status) {
                 let rail = if j + 1 == n { " " } else { "│" };
-                out.push(Line::styled(
-                    trunc(&format!(" {rail}{pad}   ↳ {tool}"), w),
-                    fg(c_dim()),
+                out.extend(wrap(
+                    &Line::styled(format!(" {rail}{pad}   ↳ {tool}"), fg(c_dim())),
+                    w,
                 ));
             }
         }
@@ -733,7 +1093,7 @@ fn subagent_lines(t: &Tab, w: usize) -> Vec<Line<'static>> {
     t.defs
         .iter()
         .filter(|d| !d.builtin)
-        .map(|d| {
+        .flat_map(|d| {
             let text = if let Some(m) = t.assigned.get(&d.name).filter(|m| !m.is_empty()) {
                 format!(" ◈ {} · 🔒 {m}", d.name)
             } else if let Some(m) = d.model.as_deref().filter(|m| !m.is_empty()) {
@@ -741,7 +1101,7 @@ fn subagent_lines(t: &Tab, w: usize) -> Vec<Line<'static>> {
             } else {
                 format!(" ◈ {}", d.name)
             };
-            Line::styled(trunc(&text, w), fg(c_fg()))
+            wrap(&Line::styled(text, fg(c_fg())), w)
         })
         .collect()
 }
@@ -757,21 +1117,15 @@ fn mcp_lines(t: &Tab, w: usize) -> Vec<Line<'static>> {
         } else {
             ("○", c_dim())
         };
-        out.push(Line::styled(
-            trunc(&format!(" {icon} {} · {}", s.name, s.kind), w),
-            fg(c),
+        out.extend(wrap(
+            &Line::styled(format!(" {icon} {} · {}", s.name, s.kind), fg(c)),
+            w,
         ));
     }
     out
 }
 
-fn draw_sidebar(
-    lines: Vec<Line<'static>>,
-    subs: Vec<Line<'static>>,
-    mcp: Vec<Line<'static>>,
-    f: &mut Frame,
-    area: Rect,
-) {
+fn sidebar_layout(subs: &[Line], mcp: &[Line], area: Rect) -> (Rect, Rect, Rect, u16, u16) {
     // Subagents and MCP sit below dashboard, together never taking more than half the sidebar.
     let budget = area.height / 2;
     let want = |v: &[Line]| {
@@ -781,7 +1135,7 @@ fn draw_sidebar(
             (v.len() as u16).saturating_add(2)
         }
     };
-    let (ws, wm, half) = (want(&subs), want(&mcp), budget / 2);
+    let (ws, wm, half) = (want(subs), want(mcp), budget / 2);
     let (hs, hm) = if ws <= half {
         (ws, wm.min(budget - ws))
     } else if wm <= half {
@@ -795,15 +1149,69 @@ fn draw_sidebar(
         Constraint::Length(hm),
     ])
     .areas(area);
-    let title = Line::styled(" dashboard ", bold(c_accent()));
-    f.render_widget(Paragraph::new(lines).block(block(title, c_border())), top);
+    (top, mid, bottom, hs, hm)
+}
+
+fn draw_side_box(
+    title: Line<'static>,
+    lines: Vec<Line<'static>>,
+    scroll: &mut SideScroll,
+    focused: bool,
+    f: &mut Frame,
+    area: Rect,
+) {
+    let mut blk = block(title, if focused { c_accent() } else { c_border() });
+    let inner_h = blk.inner(area).height as usize;
+    let total = lines.len();
+    scroll.sync(total, inner_h);
+    let start = scroll.off;
+    let end = (start + inner_h).min(total);
+    if total > inner_h && inner_h > 0 {
+        blk = blk.title_bottom(
+            Line::styled(
+                format!(" ↑↓ {}-{end}/{total} ", start + 1),
+                fg(if focused { c_accent() } else { c_dim() }),
+            )
+            .right_aligned(),
+        );
+    }
+    f.render_widget(Paragraph::new(lines[start..end].to_vec()).block(blk), area);
+}
+
+fn draw_sidebar(
+    (lines, subs, mcp): (Vec<Line<'static>>, Vec<Line<'static>>, Vec<Line<'static>>),
+    (top, mid, bottom, hs, hm): (Rect, Rect, Rect, u16, u16),
+    (dash_s, sub_s, mcp_s): (&mut SideScroll, &mut SideScroll, &mut SideScroll),
+    focus: Option<Pane>,
+    f: &mut Frame,
+) {
+    draw_side_box(
+        Line::styled(" dashboard ", bold(c_accent())),
+        lines,
+        dash_s,
+        focus == Some(Pane::Dashboard),
+        f,
+        top,
+    );
     if hs > 0 {
-        let title = Line::styled(tr(" Subagentes ", " Subagents "), bold(c_accent()));
-        f.render_widget(Paragraph::new(subs).block(block(title, c_border())), mid);
+        draw_side_box(
+            Line::styled(tr(" Subagentes ", " Subagents "), bold(c_accent())),
+            subs,
+            sub_s,
+            focus == Some(Pane::Subagents),
+            f,
+            mid,
+        );
     }
     if hm > 0 {
-        let title = Line::styled(" MCP ", bold(c_accent()));
-        f.render_widget(Paragraph::new(mcp).block(block(title, c_border())), bottom);
+        draw_side_box(
+            Line::styled(" MCP ", bold(c_accent())),
+            mcp,
+            mcp_s,
+            focus == Some(Pane::Mcp),
+            f,
+            bottom,
+        );
     }
 }
 
@@ -999,6 +1407,21 @@ mod tests {
         };
         a.tabs[0].mcp = vec![(srv("pg"), true), (srv("web"), false)];
         let s = screen(&mut a, 120, 35);
+        let lines: Vec<&str> = s.lines().collect();
+        // 120 cols: command center + monthly box (2 rounded boxes), logo hidden.
+        assert_eq!(
+            lines[0].matches('╭').count(),
+            2,
+            "header top:\n{}",
+            lines[0]
+        );
+        assert_eq!(
+            lines[6].matches('╰').count(),
+            2,
+            "header bot:\n{}",
+            lines[6]
+        );
+        assert!(lines[7].trim().is_empty(), "spacer row:\n{}", lines[7]);
         for needle in [
             "● pg · local",
             "○ web · local",
@@ -1204,14 +1627,15 @@ mod tests {
         let mut a = app(vec![t]);
 
         // Both boxes overloaded: dashboard, Subagentes and MCP all stay visible,
-        // and the long UTF-8 entry is truncated with '…' instead of overflowing.
+        // and the long UTF-8 entry wraps onto the next line instead of truncating.
         let es = screen(&mut a, 120, 35);
         assert!(es.contains("╭ dashboard "), "missing dashboard\n{es}");
         assert!(es.contains("╭ Subagentes "), "missing ES title\n{es}");
         assert!(es.contains("╭ MCP "), "missing MCP\n{es}");
         assert!(
-            es.contains("◈ diseñador-arquitectura") && es.contains('…'),
-            "expected UTF-8 truncation\n{es}"
+            es.contains("◈ diseñador-arquitectura-módulos-súper-largo")
+                && es.contains("claude-opus-4.6-fast"),
+            "expected UTF-8 wrap without truncation\n{es}"
         );
 
         // Switching language updates the box title to English.
@@ -1227,8 +1651,387 @@ mod tests {
         a.tabs[0].mcp.clear();
         let subs_only = screen(&mut a, 120, 35);
         assert!(subs_only.contains("╭ dashboard "), "{subs_only}");
-        assert!(subs_only.contains("◈ agent-7"), "{subs_only}");
+        assert!(subs_only.contains("◈ agent-6"), "{subs_only}");
+        assert!(subs_only.contains("↑↓ 1-8/12"), "{subs_only}");
         assert!(!subs_only.contains("╭ MCP "), "{subs_only}");
+    }
+
+    #[test]
+    fn sidebar_wraps_long_content_without_truncation() {
+        let mut t = tab("proyecto-con-nombre-muy-largo-para-probar-wrap");
+        t.tree.apply(r#"{"type":"assistant.turn_start","data":{}}"#);
+        t.tree.apply(
+            r#"{"type":"subagent.started","agentId":"a1","data":{"agentType":"explore","agentDisplayName":"investigador-super-detallado-del-repositorio"}}"#,
+        );
+        t.tree.apply(
+            r#"{"type":"tool.execution_start","agentId":"a1","data":{"toolCallId":"c1","toolName":"buscar_patrones_en_muchos_archivos_del_proyecto"}}"#,
+        );
+        t.defs = vec![crate::agents::AgentDef {
+            name: "arquitecto-de-sistemas-distribuidos".into(),
+            description: String::new(),
+            model: Some("claude-sonnet-4.5".into()),
+            builtin: false,
+        }];
+        t.mcp = vec![(
+            super::super::mcp::Server {
+                name: "servidor-mcp-con-identificador-larguisimo".into(),
+                kind: "local",
+            },
+            true,
+        )];
+        let a = app(vec![t]);
+        let join = |ls: &[Line]| -> String {
+            ls.iter()
+                .flat_map(|l| l.spans.iter().map(|s| s.content.as_ref()))
+                .collect()
+        };
+
+        let dash = sidebar_lines(&a, 24, 0);
+        assert!(dash.len() > 4, "expected wrapped dashboard lines");
+        assert!(dash.last().is_some_and(|l| l.spans.is_empty()));
+        let dash_txt = join(&dash);
+        assert!(dash_txt.contains("probar-wrap") && !dash_txt.contains('…'));
+        assert!(dash_txt.contains("del-repositorio"));
+        assert!(dash_txt.contains("del_proyecto"));
+
+        let subs = subagent_lines(&a.tabs[0], 24);
+        assert!(subs.len() > 1);
+        let subs_txt = join(&subs);
+        assert!(subs_txt.contains("distribuidos") && subs_txt.contains("claude-sonnet-4.5"));
+        assert!(!subs_txt.contains('…'));
+
+        let mcps = mcp_lines(&a.tabs[0], 24);
+        assert!(mcps.len() > 1);
+        let mcps_txt = join(&mcps);
+        assert!(mcps_txt.contains("larguisimo") && mcps_txt.contains("local"));
+        assert!(!mcps_txt.contains('…'));
+    }
+
+    #[test]
+    fn sidebar_focus_scroll_keyboard_mouse_and_fallback() {
+        use ratatui::crossterm::event::{
+            KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+        };
+        let key = |c: KeyCode| KeyEvent::new(c, KeyModifiers::NONE);
+        let mouse = |kind: MouseEventKind, col: u16, row: u16| MouseEvent {
+            kind,
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+
+        let mut t = tab("alpha");
+        t.defs = (1..=12)
+            .map(|i| crate::agents::AgentDef {
+                name: format!("sub-{i:02}"),
+                description: String::new(),
+                model: None,
+                builtin: false,
+            })
+            .collect();
+        t.mcp = (1..=12)
+            .map(|i| {
+                (
+                    super::super::mcp::Server {
+                        name: format!("mcp-{i:02}"),
+                        kind: "local",
+                    },
+                    true,
+                )
+            })
+            .collect();
+        let mut a = app(vec![t, tab("empty")]);
+        let _ = screen(&mut a, 120, 35);
+        assert_eq!(a.focus, Pane::Transcript);
+        assert_eq!(a.panes.len(), 4);
+
+        // Cycle focus with ']' and '[' across all visible panes.
+        a.on_key(key(KeyCode::Char(']')));
+        assert_eq!(a.focus, Pane::Dashboard);
+        a.on_key(key(KeyCode::Char(']')));
+        assert_eq!(a.focus, Pane::Subagents);
+        a.on_key(key(KeyCode::Char(']')));
+        assert_eq!(a.focus, Pane::Mcp);
+        a.on_key(key(KeyCode::Char('[')));
+        assert_eq!(a.focus, Pane::Subagents);
+
+        // Keyboard scroll moves only Subagents and clamps at max.
+        a.on_key(key(KeyCode::Char('j')));
+        a.on_key(key(KeyCode::Down));
+        assert_eq!(a.tabs[0].sub_scroll.off, 2);
+        assert_eq!(a.tabs[0].mcp_scroll.off, 0);
+        assert_eq!(a.tabs[0].scroll.off, 0);
+        a.on_key(key(KeyCode::End));
+        let sub_max = a.tabs[0].sub_scroll.max;
+        assert!(sub_max > 0);
+        assert_eq!(a.tabs[0].sub_scroll.off, sub_max);
+        a.on_key(key(KeyCode::Down));
+        assert_eq!(a.tabs[0].sub_scroll.off, sub_max);
+        let s = screen(&mut a, 120, 35);
+        assert!(s.contains("sub-12"), "expected bottom subagent\n{s}");
+        a.on_key(key(KeyCode::Home));
+        assert_eq!(a.tabs[0].sub_scroll.off, 0);
+
+        // Left click on MCP while typing exits typing, focuses MCP, and routes keyboard scroll.
+        let mcp_rect = a
+            .panes
+            .iter()
+            .find(|(p, _)| *p == Pane::Mcp)
+            .map(|(_, r)| *r)
+            .unwrap();
+        a.tabs[0].typing = true;
+        assert!(a.on_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            mcp_rect.x + 1,
+            mcp_rect.y + 1
+        )));
+        assert_eq!(a.focus, Pane::Mcp);
+        assert!(!a.tabs[0].typing);
+        a.on_key(key(KeyCode::Down));
+        assert_eq!(a.tabs[0].mcp_scroll.off, 1);
+
+        // Mouse wheel scrolls hovered panel directly; mouse move does not mark dirty.
+        assert!(!a.on_mouse(mouse(MouseEventKind::Moved, mcp_rect.x + 1, mcp_rect.y + 1)));
+        assert!(a.on_mouse(mouse(
+            MouseEventKind::ScrollDown,
+            mcp_rect.x + 1,
+            mcp_rect.y + 1
+        )));
+        assert_eq!(a.tabs[0].mcp_scroll.off, 4.min(a.tabs[0].mcp_scroll.max));
+        assert!(a.on_mouse(mouse(
+            MouseEventKind::ScrollUp,
+            mcp_rect.x + 1,
+            mcp_rect.y + 1
+        )));
+        assert_eq!(
+            a.tabs[0].mcp_scroll.off,
+            4.min(a.tabs[0].mcp_scroll.max) - 3
+        );
+
+        // Mouse is ignored when a modal is open.
+        a.help = true;
+        assert!(!a.on_mouse(mouse(
+            MouseEventKind::ScrollDown,
+            mcp_rect.x + 1,
+            mcp_rect.y + 1
+        )));
+        a.help = false;
+
+        // If focused box disappears (tab without MCP), focus falls back to Transcript.
+        a.current = 1;
+        let _ = screen(&mut a, 120, 35);
+        assert_eq!(a.focus, Pane::Transcript);
+
+        // Narrow terminal (< SIDEBAR_MIN_TOTAL) also resets focus to Transcript.
+        a.current = 0;
+        let _ = screen(&mut a, 120, 35);
+        a.focus = Pane::Dashboard;
+        let _ = screen(&mut a, 80, 35);
+        assert_eq!(a.focus, Pane::Transcript);
+    }
+
+    #[test]
+    fn sidebar_scroll_paging_clamping_tiny_height_and_narrow_wrap() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let key = |c: KeyCode| KeyEvent::new(c, KeyModifiers::NONE);
+
+        let mut t = tab("日本語🚀");
+        t.defs = (1..=14)
+            .map(|i| crate::agents::AgentDef {
+                name: format!("sub-{i:02}"),
+                description: String::new(),
+                model: None,
+                builtin: false,
+            })
+            .collect();
+        t.mcp = vec![(
+            super::super::mcp::Server {
+                name: "m1".into(),
+                kind: "local",
+            },
+            true,
+        )];
+        let mut a = app(vec![t]);
+
+        // Narrow width wrap with wide UTF-8 / emoji never panics and keeps styles.
+        let narrow = sidebar_lines(&a, 1, 0);
+        assert!(
+            narrow
+                .iter()
+                .any(|l| l.spans.iter().any(|s| s.style.fg == Some(c_accent())))
+        );
+
+        // PgDn / PgUp step by inner_h - 1 on focused Subagents pane.
+        let _ = screen(&mut a, 120, 30);
+        a.focus = Pane::Subagents;
+        let step = a.tabs[0].sub_scroll.page();
+        a.on_key(key(KeyCode::PageDown));
+        assert_eq!(a.tabs[0].sub_scroll.off, step.min(a.tabs[0].sub_scroll.max));
+        a.on_key(key(KeyCode::PageUp));
+        assert_eq!(a.tabs[0].sub_scroll.off, 0);
+
+        // Shrinking line count clamps offset and hides ↑↓ when lines fit.
+        a.on_key(key(KeyCode::End));
+        assert!(a.tabs[0].sub_scroll.off > 0);
+        a.tabs[0].defs.truncate(2);
+        let s = screen(&mut a, 120, 30);
+        assert_eq!(a.tabs[0].sub_scroll.off, 0);
+        assert!(
+            !s.contains("↑↓ 1-"),
+            "indicator should hide when lines fit\n{s}"
+        );
+
+        // Tiny sidebar height (inner_h == 0) renders safely without ↑↓ indicator.
+        a.tabs[0].defs = (1..=10)
+            .map(|i| crate::agents::AgentDef {
+                name: format!("sub-{i:02}"),
+                description: String::new(),
+                model: None,
+                builtin: false,
+            })
+            .collect();
+        "1\n2\n3\n4\n5\n6"
+            .chars()
+            .for_each(|c| a.tabs[0].editor.insert(c));
+        let tiny = screen(&mut a, 100, 18);
+        assert!(
+            !tiny.contains("↑↓ 1-"),
+            "indicator should hide at inner_h=0\n{tiny}"
+        );
+    }
+
+    #[test]
+    fn mouse_click_transcript_outside_full_dash_and_perm_modal() {
+        use ratatui::crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+        let mouse = |kind: MouseEventKind, col: u16, row: u16| MouseEvent {
+            kind,
+            column: col,
+            row,
+            modifiers: KeyModifiers::NONE,
+        };
+
+        let mut a = app(vec![tab("alpha")]);
+        let _ = screen(&mut a, 120, 35);
+        let tr_rect = a
+            .panes
+            .iter()
+            .find(|(p, _)| *p == Pane::Transcript)
+            .map(|(_, r)| *r)
+            .unwrap();
+
+        // Click on Transcript from sidebar focuses Transcript; repeating returns false.
+        a.focus = Pane::Dashboard;
+        assert!(a.on_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            tr_rect.x + 1,
+            tr_rect.y + 1
+        )));
+        assert_eq!(a.focus, Pane::Transcript);
+        assert!(!a.on_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            tr_rect.x + 1,
+            tr_rect.y + 1
+        )));
+
+        // Click on Transcript while typing keeps typing active.
+        a.tabs[0].typing = true;
+        assert!(!a.on_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            tr_rect.x + 1,
+            tr_rect.y + 1
+        )));
+        assert!(a.tabs[0].typing);
+        a.tabs[0].typing = false;
+
+        // Click outside panes (row 0 tab bar) is ignored.
+        a.focus = Pane::Dashboard;
+        assert!(!a.on_mouse(mouse(MouseEventKind::Down(MouseButton::Left), 5, 0)));
+        assert_eq!(a.focus, Pane::Dashboard);
+
+        // Mouse is ignored in Dash::Full and when a permission modal is open.
+        a.dash = Dash::Full;
+        assert!(!a.on_mouse(mouse(
+            MouseEventKind::ScrollDown,
+            tr_rect.x + 1,
+            tr_rect.y + 1
+        )));
+        a.dash = Dash::Side;
+        let (reply, _) = tokio::sync::oneshot::channel();
+        a.tabs[0].perm = Some(super::super::Perm {
+            params: serde_json::json!({}),
+            reply,
+        });
+        assert!(!a.on_mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            tr_rect.x + 1,
+            tr_rect.y + 1
+        )));
+    }
+
+    #[test]
+    fn sidebar_scroll_is_per_tab_and_prompt_apply_resets_focus() {
+        use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let key = |c: KeyCode| KeyEvent::new(c, KeyModifiers::NONE);
+        let make_tab = |name: &str| {
+            let mut t = tab(name);
+            t.defs = (1..=12)
+                .map(|i| crate::agents::AgentDef {
+                    name: format!("{name}-sub-{i:02}"),
+                    description: String::new(),
+                    model: None,
+                    builtin: false,
+                })
+                .collect();
+            t.mcp = (1..=12)
+                .map(|i| {
+                    (
+                        super::super::mcp::Server {
+                            name: format!("{name}-mcp-{i:02}"),
+                            kind: "local",
+                        },
+                        true,
+                    )
+                })
+                .collect();
+            t
+        };
+
+        let mut a = app(vec![make_tab("a"), make_tab("b")]);
+        let _ = screen(&mut a, 120, 35);
+
+        // Scroll Subagents and MCP in tab 0.
+        a.focus = Pane::Subagents;
+        a.on_key(key(KeyCode::Down));
+        a.on_key(key(KeyCode::Down));
+        a.focus = Pane::Mcp;
+        a.on_key(key(KeyCode::Down));
+        assert_eq!((a.tabs[0].sub_scroll.off, a.tabs[0].mcp_scroll.off), (2, 1));
+
+        // Switching to tab 1 keeps tab 1 at 0 and does not leak tab 0's scroll.
+        a.on_key(key(KeyCode::Tab));
+        let _ = screen(&mut a, 120, 35);
+        assert_eq!((a.tabs[1].sub_scroll.off, a.tabs[1].mcp_scroll.off), (0, 0));
+        a.on_key(key(KeyCode::Down));
+        a.on_key(key(KeyCode::Down));
+        assert_eq!(a.tabs[1].mcp_scroll.off, 2);
+
+        // Switching back preserves tab 0's independent offsets.
+        a.on_key(key(KeyCode::BackTab));
+        let _ = screen(&mut a, 120, 35);
+        assert_eq!((a.tabs[0].sub_scroll.off, a.tabs[0].mcp_scroll.off), (2, 1));
+
+        // Applying a saved prompt while focused on a sidebar pane resets focus to Transcript.
+        a.focus = Pane::Mcp;
+        a.on_key(key(KeyCode::Char('p')));
+        a.on_key(key(KeyCode::Char('n')));
+        a.on_key(key(KeyCode::Char('t')));
+        a.on_key(key(KeyCode::Tab));
+        a.on_key(key(KeyCode::Char('x')));
+        a.on_key(key(KeyCode::Enter)); // save form -> back to list
+        a.on_key(key(KeyCode::Enter)); // apply prompt
+        assert_eq!(a.focus, Pane::Transcript);
+        assert!(a.tabs[0].typing);
+        assert_eq!(a.tabs[0].editor.text, "x");
     }
 
     #[test]
@@ -1243,5 +2046,357 @@ mod tests {
         );
         a.current = 1;
         assert!(screen(&mut a, 100, 30).contains("Bienvenido"));
+    }
+
+    #[test]
+    fn renders_month_cost_in_header_wide_and_narrow() {
+        let mut a = app(vec![tab("alpha")]);
+        a.month_label = "2026-11".into();
+
+        // Loading state before MonthUsage arrives.
+        let loading = screen(&mut a, 100, 25);
+        assert!(
+            loading.contains("2026-11")
+                && (loading.contains("calculando…") || loading.contains("calculating…")),
+            "{loading}"
+        );
+
+        // Loaded state with usage: credits on row 2, USD on row 3.
+        a.month_loaded = true;
+        a.month_sessions.insert("s1".into(), 12_500_000_000);
+
+        // Wide terminal (145x35): 3 independent rounded boxes (command center, month, logo).
+        let wide = screen(&mut a, 145, 35);
+        let wide_lines: Vec<&str> = wide.lines().collect();
+        assert_eq!(wide_lines[0].matches('╭').count(), 3, "{wide}");
+        assert_eq!(wide_lines[6].matches('╰').count(), 3, "{wide}");
+        assert!(
+            wide_lines[0].contains("mes 2026-11") || wide_lines[0].contains("month 2026-11"),
+            "{}",
+            wide_lines[0]
+        );
+        assert!(wide_lines[2].contains("12.50 cr"), "{}", wide_lines[2]);
+        assert!(wide_lines[3].contains("$0.125"), "{}", wide_lines[3]);
+        assert!(wide.contains("C O P I L O T"), "{wide}");
+
+        // Narrow terminal (90x25): hides logo first, keeps 2 rounded boxes (command center + month).
+        let narrow = screen(&mut a, 90, 25);
+        let narrow_lines: Vec<&str> = narrow.lines().collect();
+        assert_eq!(narrow_lines[0].matches('╭').count(), 2, "{narrow}");
+        assert_eq!(narrow_lines[6].matches('╰').count(), 2, "{narrow}");
+        assert!(narrow.contains("2026-11"), "{narrow}");
+        assert!(narrow_lines[2].contains("12.50 cr"), "{}", narrow_lines[2]);
+        assert!(narrow_lines[3].contains("$0.125"), "{}", narrow_lines[3]);
+        assert!(!narrow.contains("C O P I L O T"), "{narrow}");
+
+        // Minimum terminal (60x18): hides monthly block cleanly, leaving 1 rounded box.
+        let min = screen(&mut a, MIN_W, MIN_H);
+        let min_lines: Vec<&str> = min.lines().collect();
+        assert_eq!(min_lines[0].matches('╭').count(), 1, "{min}");
+        assert_eq!(min_lines[6].matches('╰').count(), 1, "{min}");
+        assert!(!min.contains("2026-11"), "{min}");
+        assert!(!min.contains("12.50 cr"), "{min}");
+
+        // Loaded with large usage (27045.79 cr / $270.46): fits on 2 centered lines.
+        a.month_sessions.insert("s1".into(), 27_045_790_000_000);
+        let big = screen(&mut a, 90, 25);
+        let big_lines: Vec<&str> = big.lines().collect();
+        assert!(big_lines[2].contains("27045.79 cr"), "{}", big_lines[2]);
+        assert!(big_lines[3].contains("$270.46"), "{}", big_lines[3]);
+
+        // Loaded with zero usage shows 0.00 cr / $0.000 on 2 lines (not loading).
+        a.month_sessions.clear();
+        let zero = screen(&mut a, 90, 25);
+        let zero_lines: Vec<&str> = zero.lines().collect();
+        assert!(zero.contains("2026-11"), "{zero}");
+        assert!(zero_lines[2].contains("0.00 cr"), "{}", zero_lines[2]);
+        assert!(zero_lines[3].contains("$0.000"), "{}", zero_lines[3]);
+        assert!(
+            zero.contains("todos los proyectos") || zero.contains("all projects"),
+            "{zero}"
+        );
+        assert!(
+            !zero.contains("calculando…") && !zero.contains("calculating…"),
+            "{zero}"
+        );
+    }
+
+    #[test]
+    fn header_boxes_cutoffs_centering_and_i18n() {
+        let mut a = app(vec![tab("alpha")]);
+        a.month_label = "2026-11".into();
+        a.month_loaded = true;
+        a.month_sessions.insert("s1".into(), 12_500_000_000);
+
+        // Width cutoffs: 4 boxes (>=173), 3 boxes (125..=172: patrol+month or month+logo),
+        // 2 boxes (63..=124), 1 box (60..=62).
+        for (w, boxes, has_patrol, has_month, has_logo) in [
+            (180, 4, true, true, true),
+            (173, 4, true, true, true),
+            (172, 3, false, true, true),
+            (165, 3, false, true, true),
+            (155, 3, false, true, true),
+            (145, 3, false, true, true),
+            (135, 3, false, true, true),
+            (134, 3, true, true, false),
+            (125, 3, true, true, false),
+            (124, 2, false, true, false),
+            (120, 2, false, true, false),
+            (110, 2, false, true, false),
+            (90, 2, false, true, false),
+            (63, 2, false, true, false),
+            (62, 1, false, false, false),
+            (60, 1, false, false, false),
+        ] {
+            let s = screen(&mut a, w, 25);
+            let ls: Vec<&str> = s.lines().collect();
+            assert_eq!(ls[0].matches('╭').count(), boxes, "w={w}\n{s}");
+            assert_eq!(ls[0].matches('╮').count(), boxes, "w={w}\n{s}");
+            assert_eq!(ls[6].matches('╰').count(), boxes, "w={w}\n{s}");
+            assert_eq!(ls[6].matches('╯').count(), boxes, "w={w}\n{s}");
+            assert!(ls[7].trim().is_empty(), "w={w} separator clobbered\n{s}");
+            assert!(ls[8].contains("in 0 · out 0"), "w={w} info bar\n{s}");
+            assert!(ls[5].contains("alpha"), "w={w} tab clipped\n{s}");
+            if has_patrol || matches!(w, 110 | 120 | 124 | 145 | 155 | 165 | 172) {
+                assert!(
+                    ls[3].contains("0.00 cr · $0.000"),
+                    "w={w} summary clipped\n{s}"
+                );
+            }
+            assert_eq!(
+                ls[0].contains("reposo") || ls[0].contains("idle"),
+                has_patrol,
+                "w={w}\n{s}"
+            );
+            assert_eq!(
+                ls[2].contains("12.50 cr") && ls[3].contains("$0.125"),
+                has_month,
+                "w={w}\n{s}"
+            );
+            assert_eq!(s.contains("C O P I L O T"), has_logo, "w={w}\n{s}");
+        }
+
+        // Centering in month box (rows 2, 3, 5) and logo box (rows 1..=5) at exact 3-box cutoff.
+        let s135 = screen(&mut a, 135, 25);
+        let ls: Vec<&str> = s135.lines().collect();
+        let centered_ok = |cell: &str| {
+            let lead = cell.chars().take_while(|c| *c == ' ').count();
+            let trail = cell.chars().rev().take_while(|c| *c == ' ').count();
+            lead.abs_diff(trail) <= 1
+        };
+        for row in [2, 3, 5] {
+            let month_inner: String = ls[row].chars().skip(64).take(22).collect();
+            assert!(centered_ok(&month_inner), "row {row}: `{month_inner}`");
+        }
+        for (row, line) in ls.iter().enumerate().take(6).skip(1) {
+            let logo_inner: String = line.chars().skip(88).take(46).collect();
+            assert!(centered_ok(&logo_inner), "logo row {row}: `{logo_inner}`");
+            assert!(
+                logo_inner.starts_with(' ') && logo_inner.ends_with(' '),
+                "logo row {row}: `{logo_inner}`"
+            );
+        }
+
+        // i18n: Spanish default and English toggle (loading, loaded, and patrol box title).
+        a.month_loaded = false;
+        a.month_sessions.clear();
+        let es = screen(&mut a, 180, 25);
+        for needle in [
+            "◆ centro de mando",
+            "☾ reposo",
+            "mes 2026-11",
+            "calculando…",
+            "todos los proyectos",
+        ] {
+            assert!(es.contains(needle), "ES missing `{needle}`\n{es}");
+        }
+        let mut m = super::super::settings::Menu::new();
+        m.on_key(ratatui::crossterm::event::KeyCode::Down);
+        m.on_key(ratatui::crossterm::event::KeyCode::Enter); // ES -> EN
+        let en = screen(&mut a, 180, 25);
+        m.on_key(ratatui::crossterm::event::KeyCode::Enter); // restore ES
+        for needle in [
+            "◆ command center",
+            "☾ idle",
+            "month 2026-11",
+            "calculating…",
+            "all projects",
+        ] {
+            assert!(en.contains(needle), "EN missing `{needle}`\n{en}");
+        }
+    }
+
+    #[test]
+    fn patrol_states_dimensions_and_motion() {
+        let txt = |ls: &[Line]| -> String {
+            ls.iter()
+                .map(|l| {
+                    l.spans
+                        .iter()
+                        .map(|s| s.content.as_ref())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        let col_of = |line: &Line, needle: &str| -> Option<usize> {
+            let s: String = line.spans.iter().map(|sp| sp.content.as_ref()).collect();
+            s.find(needle).map(|b| s[..b].chars().count())
+        };
+
+        // Never panics, underflows, or exceeds w across 0..=30, ticks 0..200, all state combos.
+        for w in 0..=30 {
+            for working in [false, true] {
+                for subs in [0, 2] {
+                    for perm in [false, true] {
+                        for tick in 0..200 {
+                            let ls = patrol(tick, working, subs, perm, w);
+                            assert_eq!(ls.len(), 5, "w={w} tick={tick}");
+                            for (r, l) in ls.iter().enumerate() {
+                                assert!(
+                                    l.width() <= w,
+                                    "row {r} exceeded w={w}: width={} `{}`",
+                                    l.width(),
+                                    txt(&ls)
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Priority: pending_perm > working > idle (even with subs > 0).
+        let perm = txt(&patrol(0, true, 2, true, 26));
+        assert!(
+            perm.contains('⚠')
+                && perm.contains("\\▄███▄/")
+                && perm.contains('═')
+                && !perm.contains('▓'),
+            "perm should override working:\n{perm}"
+        );
+        let idle_with_subs = txt(&patrol(0, false, 2, false, 26));
+        assert!(
+            idle_with_subs.contains("- -") && !idle_with_subs.contains("[•]"),
+            "idle should ignore subs:\n{idle_with_subs}"
+        );
+
+        // Idle: moon, resting eyes, calm track, and z / zZ toggle every 20 ticks.
+        let idle0 = txt(&patrol(0, false, 0, false, 26));
+        let idle20 = txt(&patrol(20, false, 0, false, 26));
+        assert!(
+            idle0.contains('☾')
+                && idle0.contains("- -")
+                && idle0.contains('z')
+                && idle0.contains('─')
+                && idle0.contains('·'),
+            "{idle0}"
+        );
+        assert!(idle20.contains("zZ"), "{idle20}");
+        assert!(patrol_idle_tick(0) && !patrol_idle_tick(1) && patrol_idle_tick(20));
+
+        // Working ping-pong on w=22 (span=16): moves right then left and returns to start.
+        let mut xs = Vec::new();
+        for step in 0..=32u64 {
+            let ls = patrol(step * 2, true, 0, false, 22);
+            let s = txt(&ls);
+            assert!(!s.contains("[•]"));
+            assert!(s.contains('╠') && s.contains('╣'));
+            let box_x = col_of(&ls[2], "█")
+                .unwrap()
+                .min(col_of(&ls[2], "▓").unwrap());
+            xs.push(box_x);
+        }
+        assert_eq!(xs[0], 0);
+        assert_eq!(xs[16], 16);
+        assert_eq!(xs[32], 0);
+        assert!(xs[..=16].windows(2).all(|p| p[1] == p[0] + 1));
+        assert!(xs[16..].windows(2).all(|p| p[0] == p[1] + 1));
+
+        // Working with subagents: mini-drone [•] trails behind in both directions.
+        let right_ls = patrol(10, true, 2, false, 22);
+        let r_drone = col_of(&right_ls[2], "[•]").expect("missing drone going right");
+        let r_bot = col_of(&right_ls[2], "█").unwrap();
+        assert!(r_drone + 3 < r_bot, "drone not behind when going right");
+
+        let left_ls = patrol(46, true, 2, false, 22);
+        let l_drone = col_of(&left_ls[2], "[•]").expect("missing drone going left");
+        let l_bot = col_of(&left_ls[2], "█").unwrap();
+        assert!(l_drone > l_bot + 4, "drone not behind when going left");
+    }
+
+    #[test]
+    fn patrol_renders_in_wide_header_and_hides_in_narrow() {
+        let mut a = app(vec![busy_tab()]);
+        a.tick = 10; // quip is active on tick 10
+        let q = quip(a.tick).unwrap();
+
+        // Wide terminal (180x35): 4 independent boxes (cmd, patrol, month, logo), no clipping.
+        let wide = screen(&mut a, 180, 35);
+        let header_wide = wide.lines().take(7).collect::<Vec<_>>().join("\n");
+        assert_eq!(wide.lines().next().unwrap().matches('╭').count(), 4);
+        assert!(
+            header_wide.contains("✦ colmena")
+                && header_wide.contains('▓')
+                && header_wide.contains("[•]"),
+            "patrol box missing in wide header:\n{header_wide}"
+        );
+        assert!(
+            header_wide.contains(q)
+                && header_wide.contains("1 proyectos")
+                && header_wide.contains("alpha"),
+            "wide header clipped content:\n{header_wide}"
+        );
+
+        // Medium terminal (130x25): logo hides, patrol box fits alongside cmd + month (3 boxes).
+        let med = screen(&mut a, 130, 25);
+        let header_med = med.lines().take(7).collect::<Vec<_>>().join("\n");
+        assert_eq!(med.lines().next().unwrap().matches('╭').count(), 3);
+        assert!(
+            header_med.contains("✦ colmena") && header_med.contains('▓'),
+            "patrol box missing in medium header:\n{header_med}"
+        );
+        assert!(!header_med.contains("C O P I L O T"));
+
+        // Tight width where quip + summary fit, but patrol would clip: patrol hides cleanly (2 boxes).
+        let tight = screen(&mut a, 92, 20);
+        let header_tight = tight.lines().take(7).collect::<Vec<_>>().join("\n");
+        assert_eq!(tight.lines().next().unwrap().matches('╭').count(), 2);
+        assert!(
+            !header_tight.contains('▓') && !header_tight.contains("[•]"),
+            "patrol should hide when space is tight:\n{header_tight}"
+        );
+        assert!(
+            header_tight.contains(q)
+                && header_tight.contains("1 proyectos")
+                && header_tight.contains("alpha"),
+            "tight header clipped content:\n{header_tight}"
+        );
+
+        // Narrow terminal (60x18): patrol hides cleanly without breaking tabs (1 box).
+        let narrow = screen(&mut a, 60, 18);
+        let header_narrow = narrow.lines().take(7).collect::<Vec<_>>().join("\n");
+        assert_eq!(narrow.lines().next().unwrap().matches('╭').count(), 1);
+        assert!(
+            !header_narrow.contains('▓') && !header_narrow.contains("[•]"),
+            "patrol should hide in narrow header:\n{header_narrow}"
+        );
+        assert!(
+            header_narrow.contains("alpha"),
+            "tab broken in narrow header:\n{header_narrow}"
+        );
+
+        // Pending permission switches the patrol box title to alert and shows the alert bot.
+        let (reply, _rx) = tokio::sync::oneshot::channel();
+        a.tabs[0].perm = Some(Perm {
+            params: json!({}),
+            reply,
+        });
+        let alert = screen(&mut a, 180, 35);
+        let header_alert = alert.lines().take(7).collect::<Vec<_>>().join("\n");
+        assert!(
+            header_alert.contains("⚠ alerta") && header_alert.contains("\\▄███▄/"),
+            "alert patrol box missing:\n{header_alert}"
+        );
     }
 }

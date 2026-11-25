@@ -63,11 +63,17 @@ pub fn human(n: u64) -> String {
     }
 }
 
-/// AI credits (1 credit = $0.01 USD): `2.50 cr · $0.025`.
-pub fn cost(credits: f64) -> String {
+/// AI credits (1 credit = $0.01 USD) split into `(credits, usd)` strings.
+pub fn cost_parts(credits: f64) -> (String, String) {
     let usd = credits * 0.01;
     let d = if usd < 1.0 { 3 } else { 2 };
-    format!("{credits:.2} cr · ${usd:.d$}")
+    (format!("{credits:.2} cr"), format!("${usd:.d$}"))
+}
+
+/// AI credits (1 credit = $0.01 USD): `2.50 cr · $0.025`.
+pub fn cost(credits: f64) -> String {
+    let (cr, usd) = cost_parts(credits);
+    format!("{cr} · {usd}")
 }
 
 #[cfg(test)]
@@ -76,6 +82,8 @@ mod tests {
 
     #[test]
     fn formats_counts() {
+        assert_eq!(cost_parts(2.5), ("2.50 cr".into(), "$0.025".into()));
+        assert_eq!(cost_parts(250.0), ("250.00 cr".into(), "$2.50".into()));
         assert_eq!(cost(2.5), "2.50 cr · $0.025");
         assert_eq!(cost(250.0), "250.00 cr · $2.50");
         assert_eq!(human(999), "999");
