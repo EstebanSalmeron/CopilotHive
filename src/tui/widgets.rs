@@ -244,6 +244,9 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     if let Some(p) = &app.prompts {
         p.draw(f, area);
     }
+    if let Some(t) = &app.tour {
+        t.draw(f, area, app.tick);
+    }
     if help {
         modals::draw_help(f, area);
     }
@@ -913,7 +916,15 @@ fn welcome() -> Vec<Line<'static>> {
             "Esc / Ctrl+C",
             tr("cancelar el turno en curso", "cancel the running turn"),
         ),
+        k(
+            "C / R",
+            tr(
+                "/clear: sesión nueva · /restart: recargar",
+                "/clear: new session · /restart: reload",
+            ),
+        ),
         k("?", tr("ayuda completa", "full help")),
+        k("t", tr("tutorial animado", "animated tour")),
         k(
             "S",
             tr("ajustes: tema e idioma", "settings: theme and language"),
@@ -1385,6 +1396,29 @@ fn draw_status(
                 " ¿Cerrar pestaña? Está trabajando.  y: cerrar · otra tecla: volver",
                 " Close tab? It is working.  y: close · any other key: back",
             ),
+            bold(c_attention()),
+        )
+    } else if matches!(confirm, Some(Confirm::Clear | Confirm::Restart)) {
+        let clear = confirm == Some(&Confirm::Clear);
+        Line::styled(
+            match (clear, t.working()) {
+                (true, false) => tr(
+                    " ¿Sesión nueva (/clear)? Se pierde el contexto.  y: sí · otra tecla: volver",
+                    " New session (/clear)? Context is lost.  y: yes · any other key: back",
+                ),
+                (true, true) => tr(
+                    " ¿Sesión nueva (/clear)? ESTÁ TRABAJANDO.  y: sí · otra tecla: volver",
+                    " New session (/clear)? IT IS WORKING.  y: yes · any other key: back",
+                ),
+                (false, false) => tr(
+                    " ¿Reiniciar (/restart)? Recarga agentes y MCP.  y: sí · otra tecla: volver",
+                    " Restart (/restart)? Reloads agents and MCP.  y: yes · any other key: back",
+                ),
+                (false, true) => tr(
+                    " ¿Reiniciar (/restart)? ESTÁ TRABAJANDO.  y: sí · otra tecla: volver",
+                    " Restart (/restart)? IT IS WORKING.  y: yes · any other key: back",
+                ),
+            },
             bold(c_attention()),
         )
     } else if confirm.is_some() {

@@ -345,6 +345,14 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect) {
             ),
         ),
         (
+            "C / R",
+            tr(
+                "/clear sesión nueva · /restart recarga agentes y MCP (también escribiéndolos)",
+                "/clear new session · /restart reload agents and MCP (also typeable)",
+            ),
+        ),
+        ("t", tr("tutorial animado", "animated tour")),
+        (
             "q",
             tr(
                 "salir (pide confirmación si hay trabajo)",

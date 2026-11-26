@@ -16,6 +16,46 @@ pub(super) fn read_png_b64() -> Result<String> {
     Ok(base64(&png))
 }
 
+/// Reads plain text from the system clipboard (macOS: `pbpaste`), with `\n` line endings.
+pub(super) fn read_text() -> Result<String> {
+    if !cfg!(target_os = "macos") {
+        bail!("clipboard text is only supported on macOS");
+    }
+    let out = std::process::Command::new("pbpaste").output()?;
+    let text = normalize(&String::from_utf8_lossy(&out.stdout));
+    if !out.status.success() || text.is_empty() {
+        bail!("no text in the clipboard");
+    }
+    Ok(text)
+}
+
+/// Strips ANSI escapes and control chars, trailing spaces and runs of blank lines.
+fn normalize(s: &str) -> String {
+    let mut clean = String::with_capacity(s.len());
+    let s = s.replace("\r\n", "\n").replace('\r', "\n");
+    let mut it = s.chars().peekable();
+    while let Some(c) = it.next() {
+        match c {
+            '\x1b' => {
+                if it.next_if_eq(&'[').is_some() {
+                    while it.next().is_some_and(|c| !('@'..='~').contains(&c)) {}
+                }
+            }
+            '\t' => clean.push_str("    "),
+            '\n' => clean.push(c),
+            c if c.is_control() || c == '\u{feff}' => {}
+            c => clean.push(c),
+        }
+    }
+    let mut out: Vec<&str> = Vec::new();
+    for l in clean.lines().map(str::trim_end) {
+        if !(l.is_empty() && out.last().is_none_or(|p| p.is_empty())) {
+            out.push(l);
+        }
+    }
+    out.join("\n").trim().to_string()
+}
+
 /// Decodes osascript's `«data PNGf<hex>»` output.
 fn parse_osascript_data(s: &str) -> Result<Vec<u8>> {
     let hex = s
@@ -64,6 +104,14 @@ mod tests {
         assert_eq!(base64(b"f"), "Zg==");
         assert_eq!(base64(b"fo"), "Zm8=");
         assert_eq!(base64(b"foo"), "Zm9v");
+    }
+
+    #[test]
+    fn normalize_cleans_clipboard_text() {
+        assert_eq!(
+            normalize("\u{feff}\x1b[1mhola\x1b[0m  \r\n\r\n\r\n\r\n\tx\u{7}  \n"),
+            "hola\n\n    x"
+        );
     }
 
     #[test]

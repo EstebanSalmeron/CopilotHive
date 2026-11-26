@@ -18,6 +18,7 @@ mod prompts;
 mod session;
 mod settings;
 mod theme;
+mod tour;
 mod widgets;
 
 use crate::acp::{self, ConfigOpt, Ctl, Perm, Update};
@@ -414,6 +415,8 @@ enum Confirm {
     Quit,
     AllowAll,
     CloseTab,
+    Clear,
+    Restart,
 }
 
 enum SelTarget {
@@ -438,6 +441,7 @@ pub struct App {
     dash_scroll: SideScroll,
     panes: Vec<(Pane, Rect)>,
     help: bool,
+    tour: Option<tour::Tour>,
     confirm: Option<Confirm>,
     selector: Option<Selector>,
     history: Option<history::History>,
@@ -548,6 +552,7 @@ impl App {
 
     fn has_modal(&self) -> bool {
         self.help
+            || self.tour.is_some()
             || self.confirm.is_some()
             || self.selector.is_some()
             || self.history.is_some()
@@ -673,6 +678,12 @@ impl App {
             self.help = false;
             return false;
         }
+        if let Some(t) = &mut self.tour {
+            if t.on_key(code, self.tick) {
+                self.tour = None;
+            }
+            return false;
+        }
         if let Some(c) = self.confirm.take() {
             if code != KeyCode::Char('y') {
                 return false;
@@ -680,6 +691,8 @@ impl App {
             match c {
                 Confirm::Quit => return true,
                 Confirm::CloseTab => self.close_current(),
+                Confirm::Clear => self.restart_current(true),
+                Confirm::Restart => self.restart_current(false),
                 Confirm::AllowAll => self.tabs[self.current].set_allow_all(true),
             }
             return false;
@@ -700,7 +713,7 @@ impl App {
                 mcp::Action::Close => self.mcp = None,
                 mcp::Action::Apply => {
                     self.mcp = None;
-                    self.restart_current();
+                    self.restart_current(false);
                 }
             }
             return false;
@@ -802,7 +815,14 @@ impl App {
                 KeyCode::Enter if alt || mods.contains(KeyModifiers::SHIFT) => {
                     t.editor.insert('\n')
                 }
-                KeyCode::Enter => t.send_prompt(),
+                KeyCode::Enter => match t.editor.text.trim() {
+                    "/clear" | "/restart" => {
+                        let fresh = t.editor.text.trim() == "/clear";
+                        t.editor.take();
+                        self.restart_current(fresh);
+                    }
+                    _ => t.send_prompt(),
+                },
                 KeyCode::Char('j') if ctrl => t.editor.insert('\n'),
                 KeyCode::Char('s') if ctrl => {
                     if t.editor.text.trim().is_empty() {
@@ -902,6 +922,9 @@ impl App {
                 });
             }
             KeyCode::Char('?') => self.help = true,
+            KeyCode::Char('C') => self.confirm = Some(Confirm::Clear),
+            KeyCode::Char('R') => self.confirm = Some(Confirm::Restart),
+            KeyCode::Char('t') => self.tour = Some(tour::Tour::new(self.tick)),
             KeyCode::Char('!') => return self.jump_attention(),
             KeyCode::Enter | KeyCode::Char('i') => {
                 if code == KeyCode::Enter && self.dash == Dash::Full && t.editor.is_empty() {
@@ -943,19 +966,25 @@ impl App {
 
     /// Replaces the current tab with a fresh ACP process that reloads its session,
     /// so a changed MCP server list takes effect.
-    fn restart_current(&mut self) {
+    fn restart_current(&mut self, fresh: bool) {
         let old = &self.tabs[self.current];
-        let (name, cwd, sid) = (old.name.clone(), old.cwd.clone(), old.sid.clone());
+        let (name, cwd) = (old.name.clone(), old.cwd.clone());
+        let sid = if fresh { None } else { old.sid.clone() };
         let id = self.next_id;
         self.next_id += 1;
         let mut tab = spawn_tab(id, name, cwd, sid, &self.tx);
-        tab.push(Item::Note(
+        let note = if fresh {
             settings::tr(
-                "MCP actualizados: sesión reiniciada (allow all y modelo se restablecen)",
-                "MCP updated: session restarted (allow all and model are reset)",
+                "sesión nueva (/clear): contexto vacío; allow all y modelo se restablecen",
+                "new session (/clear): empty context; allow all and model are reset",
             )
-            .into(),
-        ));
+        } else {
+            settings::tr(
+                "sesión reiniciada (/restart): agentes y MCP recargados; allow all y modelo se restablecen",
+                "session restarted (/restart): agents and MCP reloaded; allow all and model are reset",
+            )
+        };
+        tab.push(Item::Note(note.into()));
         self.tabs[self.current] = tab;
     }
 
@@ -1207,6 +1236,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         dash_scroll: SideScroll::default(),
         panes: vec![],
         help: false,
+        tour: None,
         confirm: None,
         selector: None,
         history: None,
@@ -1280,6 +1310,7 @@ async fn event_loop(
             app.tick += 1;
             // Idle blink: redraw when the eyes close and when they reopen.
             dirty |= app.animating()
+                || app.tour.is_some()
                 || widgets::eyes_closed(app.tick, false)
                 || widgets::eyes_closed(app.tick - 1, false)
                 || widgets::patrol_idle_tick(app.tick)
@@ -1315,6 +1346,7 @@ mod tests {
             dash_scroll: SideScroll::default(),
             panes: vec![],
             help: false,
+            tour: None,
             confirm: None,
             selector: None,
             history: None,

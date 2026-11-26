@@ -24,13 +24,15 @@
 | Abrir | `o` / `Esc` | abrir la carpeta actual en una nueva pestaña / cerrar |
 | Normal | `S` | ajustes: tema (oscuro/claro) e idioma (español/English); `↑↓` elegir, `Enter`/`←→` cambiar, `Esc` cerrar. Se guarda en `~/.config/copilot-hive/settings.toml` |
 | Normal | `M` | servidores MCP del proyecto: `↑↓` elegir, `Espacio` activar/desactivar, `Enter` aplicar, `Esc` cancelar. Se guarda por carpeta en `~/.config/copilot-hive/mcp.toml` y se aplica reiniciando el proceso ACP con `--disable-mcp-server <n>` y recargando la sesión (`session/load`); allow all y modelo se restablecen. Lista los de `~/.copilot/mcp-config.json`, `.mcp.json` y `.github/mcp.json` |
-| Normal | `p` | prompts guardados localmente (`~/.config/copilot-hive/prompts.toml`, compartidos entre proyectos): `↑↓` elegir, `Enter` aplicar al editor, `n` nuevo, `s` guardar borrador actual, `e` editar, `d` borrar, `Esc` cerrar |
+| Normal | `p` | prompts guardados localmente (`~/.config/copilot-hive/prompts.toml`, compartidos entre proyectos): `↑↓` elegir, `Enter` aplicar al editor, `n` nuevo, `v` nuevo desde el portapapeles (luego solo pones nombre y `Enter`), `s` guardar borrador actual, `e` editar, `d` borrar, `Esc` cerrar; en el formulario `Ctrl+V` pega el portapapeles en el texto (solo macOS) |
 | Normal | `A` | allow all on/off (pide confirmación al activar; también en el modal de permiso) |
 | Normal | `m` / `e` | selector de modelo / reasoning effort de la sesión (`session/set_config_option`) |
 | Subagentes | `Enter` | abre el prompt con «Usa el subagente <nombre> para: » (si el editor está vacío) para lanzar el agente elegido |
 | Subagentes | `↑↓`, `m` | elegir agente; `m` fija su modelo obligatorio 🔒 |
 | Normal | `!` | saltar al siguiente proyecto con permiso pendiente |
 | Normal | `?` | ayuda |
+| Normal | `C` / `R` | `/clear`: sesión ACP nueva en el mismo proyecto (contexto vacío) / `/restart`: reinicia el proceso y recarga la sesión (`session/load`) para aplicar cambios en agentes o MCP. Piden confirmación (`y`); allow all y modelo se restablecen. También se pueden escribir `/clear` o `/restart` como prompt (sin confirmación) |
+| Normal | `t` | tutorial animado de 6 páginas (`←→`/`Enter` navegar, `1-6` ir a, `Esc` cerrar); no se abre solo |
 | Normal | `x` | cerrar la pestaña actual (confirma si trabaja; la última no se cierra) |
 | Normal | `q` | salir (confirma si hay agentes trabajando) |
 | Escribiendo | `Enter` | enviar |

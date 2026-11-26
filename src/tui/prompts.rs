@@ -1,4 +1,5 @@
 //! Locally saved reusable prompts (`~/.config/copilot-hive/prompts.toml`).
+use super::clipboard;
 use super::input::Editor;
 use super::markdown::wrap;
 use super::settings::tr;
@@ -175,6 +176,18 @@ impl Menu {
                     body: Editor::default(),
                 };
             }
+            KeyCode::Char('v') if !self.load_failed => match clipboard::read_text() {
+                Ok(t) => {
+                    self.error = None;
+                    self.mode = Mode::Form {
+                        editing: None,
+                        in_body: false,
+                        name: Editor::default(),
+                        body: editor_with(&t),
+                    };
+                }
+                Err(e) => self.error = Some(e.to_string()),
+            },
             KeyCode::Char('s') if !self.load_failed => {
                 if self.draft.trim().is_empty() {
                     self.error = Some(tr("el borrador está vacío", "draft is empty").into());
@@ -240,6 +253,14 @@ impl Menu {
                 body.insert('\n');
             }
             KeyCode::Char('j') if *in_body && ctrl => body.insert('\n'),
+            KeyCode::Char('v') if ctrl => match clipboard::read_text() {
+                Ok(t) => {
+                    *in_body = true;
+                    self.error = None;
+                    t.chars().for_each(|c| body.insert(c));
+                }
+                Err(e) => self.error = Some(e.to_string()),
+            },
             KeyCode::Enter if !*in_body && body.text.trim().is_empty() => *in_body = true,
             KeyCode::Enter => {
                 let title = name.text.trim().to_string();
@@ -333,8 +354,8 @@ impl Menu {
         let footer = wrap(
             &Line::styled(
                 tr(
-                    "↑↓ elegir · Enter aplicar · n nuevo · s borrador · e editar · d borrar · Esc cerrar",
-                    "↑↓ select · Enter apply · n new · s draft · e edit · d delete · Esc close",
+                    "↑↓ elegir · Enter aplicar · n nuevo · v pegar · s borrador · e editar · d borrar · Esc cerrar",
+                    "↑↓ select · Enter apply · n new · v paste · s draft · e edit · d delete · Esc close",
                 ),
                 fg(c_dim()),
             ),
@@ -452,8 +473,8 @@ impl Menu {
         f.render_widget(
             Paragraph::new(Line::styled(
                 tr(
-                    "Tab campo · Enter guardar · Alt+Enter nueva línea · Esc volver",
-                    "Tab field · Enter save · Alt+Enter newline · Esc back",
+                    "Tab campo · Ctrl+V pegar · Enter guardar · Alt+Enter nueva línea · Esc volver",
+                    "Tab field · Ctrl+V paste · Enter save · Alt+Enter newline · Esc back",
                 ),
                 fg(c_dim()),
             )),
