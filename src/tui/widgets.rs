@@ -254,7 +254,25 @@ pub fn draw(app: &mut App, f: &mut Frame) {
 
 fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
     let mut spans = vec![];
-    for (i, t) in app.tabs.iter().enumerate() {
+    let groups = app.groups();
+    if groups.len() > 1 {
+        let cur = app.tabs[app.current].group.as_deref();
+        let at = groups.iter().position(|g| *g == cur).unwrap_or(0);
+        let others_attention = app
+            .tabs
+            .iter()
+            .any(|t| t.group.as_deref() != cur && t.perm.is_some());
+        spans.push(Span::styled(
+            format!(" {} {}/{} ", cur.unwrap_or("—"), at + 1, groups.len()),
+            bold(c_bg()).bg(c_accent()),
+        ));
+        if others_attention {
+            spans.push(Span::styled(" ! ", bold(c_bg()).bg(c_error())));
+        }
+        spans.push(Span::raw(" "));
+    }
+    for (n, i) in app.group_tabs().into_iter().enumerate() {
+        let t = &app.tabs[i];
         let active = i == app.current;
         let base = if active {
             bold(c_fg()).bg(c_surface())
@@ -262,7 +280,7 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
             fg(c_dim())
         };
         let mut label = vec![
-            Span::styled(format!(" {} ", i + 1), fg(c_dim()).patch(base)),
+            Span::styled(format!(" {} ", n + 1), fg(c_dim()).patch(base)),
             status_icon(t, tick).patch_style(Style::new().bg(if active {
                 c_surface()
             } else {

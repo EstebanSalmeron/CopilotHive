@@ -3,6 +3,10 @@
 [[projects]]
 name = "backend"
 path = "/ruta/absoluta/al/proyecto"
+# Grupo opcional. La barra de pestañas muestra solo el grupo actual (`{` / `}` cambian de
+# grupo; Tab y Alt+1..9 actúan dentro del grupo). Orden de grupos = primera aparición.
+# Los proyectos sin `group` forman un grupo aparte.
+group = "Core"
 # Aprobar todos los permisos de esta sesión desde el arranque (peligroso). Por defecto false.
 allow_all = false
 # Modelo de la sesión al arrancar (id tal como lo lista Copilot).

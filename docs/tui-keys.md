@@ -4,7 +4,8 @@
 
 | Modo | Tecla | Acción |
 |------|-------|--------|
-| Global | `Tab` / `Shift+Tab`, `Alt+1..9` | cambiar de proyecto (el borrador se conserva por pestaña) |
+| Global | `Tab` / `Shift+Tab`, `Alt+1..9` | cambiar de proyecto dentro del grupo actual (el borrador se conserva por pestaña) |
+| Normal | `}` / `{` | grupo siguiente / anterior (salta a su primera pestaña); sin efecto si no hay grupos. Aparece `!` rojo en la barra si otro grupo tiene un permiso pendiente (`!` salta a él) |
 | Global | `Ctrl+C` | cancelar el turno en curso (`session/cancel`) |
 | Normal | `Enter` / `i` | escribir un prompt |
 | Normal | `f` | `/fleet`: abre el prompt con `/fleet ` ya escrito; tras el objetivo, Copilot reparte el trabajo en subagentes paralelos (visibles en el dashboard `d`/`s`). `/fleet` es un comando que Copilot anuncia por ACP, así que se envía tal cual |

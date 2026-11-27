@@ -1,5 +1,5 @@
 //! Project list from a TOML file: `[[projects]]` with `name`, `path` and optional
-//! `allow_all`, `model` and `[projects.agent_models]` (see docs/config.example.toml).
+//! `group`, `allow_all`, `model` and `[projects.agent_models]` (see docs/config.example.toml).
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -9,6 +9,8 @@ use std::path::PathBuf;
 pub struct Project {
     pub name: String,
     pub path: PathBuf,
+    /// Optional group: the tab bar shows one group at a time (`{`/`}` switch group).
+    pub group: Option<String>,
     /// Start the session with ACP `allow_all` on (dangerous; off by default).
     #[serde(default)]
     pub allow_all: bool,
@@ -63,6 +65,13 @@ mod tests {
         assert_eq!(p[0].agent_models["explore"], "h");
         let p = parse("[[projects]]\nname=\"a\"\npath=\"/x\"").unwrap();
         assert!(!p[0].allow_all && p[0].model.is_none() && p[0].agent_models.is_empty());
+    }
+
+    #[test]
+    fn parses_optional_group() {
+        let p = parse("[[projects]]\nname=\"a\"\npath=\"/x\"\ngroup=\"Core\"\n[[projects]]\nname=\"b\"\npath=\"/y\"").unwrap();
+        assert_eq!(p[0].group.as_deref(), Some("Core"));
+        assert!(p[1].group.is_none());
     }
 
     #[test]

@@ -163,6 +163,8 @@ struct Tab {
     dash_sel: Option<String>,
     /// MCP servers the session was started with, and whether each is enabled.
     mcp: Vec<(mcp::Server, bool)>,
+    /// Project group; tabs without one form their own implicit group.
+    group: Option<String>,
 }
 
 impl Drop for Tab {
@@ -209,6 +211,7 @@ impl Tab {
             assigned,
             dash_sel: None,
             mcp: vec![],
+            group: None,
         }
     }
 
@@ -664,10 +667,43 @@ impl App {
         }
     }
 
-    fn switch(&mut self, to: usize) {
-        if to < self.tabs.len() {
-            self.current = to;
+    /// Indices of the tabs in the current tab's group, in tab order.
+    pub(super) fn group_tabs(&self) -> Vec<usize> {
+        let g = &self.tabs[self.current].group;
+        (0..self.tabs.len())
+            .filter(|&i| self.tabs[i].group == *g)
+            .collect()
+    }
+
+    /// Distinct groups in order of first appearance (`None` = ungrouped tabs).
+    pub(super) fn groups(&self) -> Vec<Option<&str>> {
+        let mut out: Vec<Option<&str>> = vec![];
+        for t in &self.tabs {
+            let g = t.group.as_deref();
+            if !out.contains(&g) {
+                out.push(g);
+            }
         }
+        out
+    }
+
+    /// Selects the `to`-th tab of the current group.
+    fn switch(&mut self, to: usize) {
+        if let Some(&i) = self.group_tabs().get(to) {
+            self.current = i;
+        }
+    }
+
+    /// Jumps to the first tab of the next/previous group; a no-op with a single group.
+    fn switch_group(&mut self, delta: isize) -> bool {
+        let groups = self.groups();
+        let cur = self.tabs[self.current].group.as_deref();
+        let at = groups.iter().position(|g| *g == cur).unwrap_or(0);
+        let to = groups[(at as isize + delta).rem_euclid(groups.len() as isize) as usize];
+        if let Some(i) = self.tabs.iter().position(|t| t.group.as_deref() == to) {
+            self.current = i;
+        }
+        false
     }
 
     /// Returns true to quit.
@@ -773,7 +809,7 @@ impl App {
         let t = &mut self.tabs[self.current];
         match code {
             KeyCode::Tab => return self.switch_by(1),
-            KeyCode::BackTab => return self.switch_by(n - 1),
+            KeyCode::BackTab => return self.switch_by(-1),
             KeyCode::Char('c') if ctrl => {
                 t.cancel_turn();
                 return false;
@@ -856,6 +892,8 @@ impl App {
             KeyCode::End => self.scroll_pane_edge(self.focus, false),
             KeyCode::Char('k') => self.scroll_pane(self.focus, -1),
             KeyCode::Char('j') => self.scroll_pane(self.focus, 1),
+            KeyCode::Char('}') => return self.switch_group(1),
+            KeyCode::Char('{') => return self.switch_group(-1),
             KeyCode::Char(']') => self.cycle_focus(1),
             KeyCode::Char('[') => self.cycle_focus(-1),
             KeyCode::Char('q') => {
@@ -968,7 +1006,7 @@ impl App {
     /// so a changed MCP server list takes effect.
     fn restart_current(&mut self, fresh: bool) {
         let old = &self.tabs[self.current];
-        let (name, cwd) = (old.name.clone(), old.cwd.clone());
+        let (name, cwd, group) = (old.name.clone(), old.cwd.clone(), old.group.clone());
         let sid = if fresh { None } else { old.sid.clone() };
         let id = self.next_id;
         self.next_id += 1;
@@ -984,6 +1022,7 @@ impl App {
                 "session restarted (/restart): agents and MCP reloaded; allow all and model are reset",
             )
         };
+        tab.group = group;
         tab.push(Item::Note(note.into()));
         self.tabs[self.current] = tab;
     }
@@ -999,10 +1038,15 @@ impl App {
             return;
         }
         let cur = &self.tabs[self.current];
-        let (name, cwd) = (format!("{} ↺", cur.name), cur.cwd.clone());
+        let (name, cwd, group) = (
+            format!("{} ↺", cur.name),
+            cur.cwd.clone(),
+            cur.group.clone(),
+        );
         let id = self.next_id;
         self.next_id += 1;
         let mut tab = spawn_tab(id, name, cwd, Some(sid), &self.tx);
+        tab.group = group;
         tab.push(Item::Note(tr_fmt!(
             "sesión reanudada: {title}",
             "session resumed: {title}"
@@ -1021,7 +1065,8 @@ impl App {
             .unwrap_or_else(|| cwd.clone());
         let id = self.next_id;
         self.next_id += 1;
-        let tab = spawn_tab(id, name, cwd, None, &self.tx);
+        let mut tab = spawn_tab(id, name, cwd, None, &self.tx);
+        tab.group = self.tabs[self.current].group.clone();
         self.tabs.push(tab);
         self.current = self.tabs.len() - 1;
     }
@@ -1110,8 +1155,11 @@ impl App {
         }
     }
 
-    fn switch_by(&mut self, delta: usize) -> bool {
-        self.current = (self.current + delta) % self.tabs.len();
+    /// Cycles through the tabs of the current group.
+    fn switch_by(&mut self, delta: isize) -> bool {
+        let tabs = self.group_tabs();
+        let at = tabs.iter().position(|&i| i == self.current).unwrap_or(0);
+        self.current = tabs[(at as isize + delta).rem_euclid(tabs.len() as isize) as usize];
         false
     }
 
@@ -1192,6 +1240,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
             .to_string_lossy()
             .into_owned();
         let mut tab = spawn_tab(i, p.name.clone(), cwd, None, &tx);
+        tab.group = p.group.clone();
         let settings = agents::settings_path();
         for (agent, model) in &p.agent_models {
             if tab.assigned.get(agent) != Some(model) {
@@ -1382,6 +1431,30 @@ mod tests {
         s.down(1000);
         s.sync(53, 10);
         assert_eq!((s.off, s.unseen), (0, false));
+    }
+
+    #[test]
+    fn groups_scope_tab_cycling_and_alt_numbers() {
+        let g = |n: &str, g: &str| {
+            let mut t = tab(n);
+            t.group = Some(g.into());
+            t
+        };
+        let mut a = app(vec![g("a", "X"), g("b", "Y"), g("c", "X"), g("d", "Y")]);
+        a.on_key(key(KeyCode::Tab));
+        assert_eq!(a.current, 2); // skips "b": different group
+        a.on_key(key(KeyCode::Tab));
+        assert_eq!(a.current, 0);
+        a.on_key(key(KeyCode::BackTab));
+        assert_eq!(a.current, 2);
+        a.on_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT));
+        assert_eq!(a.current, 2);
+        a.on_key(key(KeyCode::Char('}')));
+        assert_eq!(a.current, 1); // first tab of the next group
+        a.on_key(key(KeyCode::Char('{')));
+        assert_eq!(a.current, 0);
+        a.on_key(key(KeyCode::Char('{')));
+        assert_eq!(a.current, 1); // wraps around
     }
 
     #[test]
