@@ -157,6 +157,18 @@ impl Picker {
         }
     }
 
+    /// Picks every project, or clears the selection if all are already picked.
+    fn toggle_all(&mut self) {
+        if self.picked.len() == self.items.len() {
+            self.picked.clear();
+        } else {
+            let missing: Vec<usize> = (0..self.items.len())
+                .filter(|i| !self.picked.contains(i))
+                .collect();
+            self.picked.extend(missing);
+        }
+    }
+
     /// Picks every project of the highlighted one's group, or drops them all if already picked.
     fn toggle_group(&mut self) {
         let Some(cur) = self.items.get(self.sel) else {
@@ -249,6 +261,7 @@ impl Picker {
             KeyCode::End => self.sel = last,
             KeyCode::Char(' ') if !self.items.is_empty() => self.toggle(self.sel),
             KeyCode::Char('g') => self.toggle_group(),
+            KeyCode::Char('a') => self.toggle_all(),
             KeyCode::Char('c') => self.picked.clear(),
             KeyCode::Char('n') => self.edit = Some((Edit::Pending, self.alias.clone())),
             KeyCode::Enter => {
@@ -280,7 +293,7 @@ impl Picker {
     fn draw_saved(&self, f: &mut Frame, area: Rect) {
         let rows = self.saved.len().max(1);
         let h = (rows as u16 + 4).min(area.height.saturating_sub(2));
-        let r = centered(area, area.width.min(78), h);
+        let r = centered(area, area.width.min(92), h);
         let visible = h.saturating_sub(4) as usize;
         let off = self
             .saved_sel
@@ -355,7 +368,7 @@ impl Picker {
         }
         let h = (self.items.len() as u16 + 4).min(area.height.saturating_sub(2));
         let rows = h.saturating_sub(4) as usize;
-        let r = centered(area, area.width.min(78), h);
+        let r = centered(area, area.width.min(92), h);
         let off = self
             .sel
             .saturating_sub(rows.saturating_sub(1))
@@ -402,8 +415,8 @@ impl Picker {
         } else {
             Line::styled(
                 tr(
-                    "↑↓ · Espacio · g grupo · c limpiar · n alias · Enter iniciar · Tab guardadas",
-                    "↑↓ · Space · g group · c clear · n alias · Enter start · Tab saved",
+                    "↑↓ · Espacio · a todos · g grupo · c limpiar · n alias · Enter iniciar · Tab guardadas",
+                    "↑↓ · Space · a all · g group · c clear · n alias · Enter start · Tab saved",
                 ),
                 fg(c_dim()),
             )
@@ -486,6 +499,17 @@ mod tests {
         assert_eq!(names, ["a", "d"]);
         p.on_key(KeyCode::Char(' '));
         assert_eq!(p.picked, [0]);
+    }
+
+    #[test]
+    fn a_picks_all_keeping_existing_order_then_clears() {
+        let mut p = picker();
+        p.on_key(KeyCode::End);
+        p.on_key(KeyCode::Char(' '));
+        p.on_key(KeyCode::Char('a'));
+        assert_eq!(p.picked, [3, 0, 1, 2]);
+        p.on_key(KeyCode::Char('a'));
+        assert!(p.picked.is_empty());
     }
 
     #[test]
