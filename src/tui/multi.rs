@@ -22,6 +22,9 @@ pub(super) struct Item {
 #[derive(Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub(super) struct Saved {
     pub name: String,
+    /// User-chosen label shown instead of `name`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
     /// Folders; the first is the session `cwd`, the rest go through `--add-dir`.
     pub dirs: Vec<String>,
     #[serde(default)]
@@ -29,9 +32,15 @@ pub(super) struct Saved {
 }
 
 impl Saved {
-    pub(super) fn from_items(items: &[Item]) -> Self {
+    /// Tab title: the alias when set, otherwise the generated name.
+    pub(super) fn label(&self) -> &str {
+        self.alias.as_deref().unwrap_or(&self.name)
+    }
+
+    pub(super) fn from_items(items: &[Item], alias: Option<String>) -> Self {
         Saved {
             name: title(items),
+            alias,
             dirs: items.iter().map(|i| i.cwd.clone()).collect(),
             group: items.first().and_then(|i| i.group.clone()),
         }
@@ -71,26 +80,40 @@ fn store(sessions: &[Saved]) -> std::io::Result<()> {
     std::fs::write(p, text)
 }
 
-/// Adds `s` unless a saved session already has the same folders (the newest wins the name).
-fn upsert(list: &mut Vec<Saved>, s: Saved) {
+/// Adds `s`, replacing a saved session with the same folders; an existing alias is kept
+/// when `s` has none.
+fn upsert(list: &mut Vec<Saved>, mut s: Saved) -> Saved {
+    if let Some(old) = list.iter().find(|o| o.dirs == s.dirs) {
+        s.alias = s.alias.or_else(|| old.alias.clone());
+    }
     list.retain(|o| o.dirs != s.dirs);
-    list.push(s);
+    list.push(s.clone());
+    s
 }
 
 /// Saves a started session so it is offered again after a restart.
-pub(super) fn remember(s: &Saved) -> std::io::Result<()> {
+/// Returns the stored entry, which keeps a previously set alias.
+pub(super) fn remember(s: Saved) -> (Saved, Option<std::io::Error>) {
     let mut all = load();
-    upsert(&mut all, s.clone());
-    store(&all)
+    let kept = upsert(&mut all, s);
+    (kept, store(&all).err())
 }
 
 pub(super) enum Action {
     None,
     Close,
     /// Picked projects in selection order (at least two); the caller also remembers them.
-    Start(Vec<Item>),
+    Start(Vec<Item>, Option<String>),
     /// A remembered session chosen from the saved list.
     Open(Saved),
+}
+
+/// What the alias text box is editing.
+enum Edit {
+    /// The alias of the session about to start.
+    Pending,
+    /// The alias of the saved session at this index.
+    Saved(usize),
 }
 
 #[derive(PartialEq)]
@@ -108,6 +131,8 @@ pub(super) struct Picker {
     view: View,
     saved: Vec<Saved>,
     saved_sel: usize,
+    alias: String,
+    edit: Option<(Edit, String)>,
 }
 
 impl Picker {
@@ -116,6 +141,8 @@ impl Picker {
             view: View::Pick,
             saved,
             saved_sel: 0,
+            alias: String::new(),
+            edit: None,
             sel: sel.min(items.len().saturating_sub(1)),
             items,
             picked: vec![],
@@ -161,6 +188,10 @@ impl Picker {
                     return Action::Open(s.clone());
                 }
             }
+            KeyCode::Char('r') if self.saved_sel < self.saved.len() => {
+                let cur = self.saved[self.saved_sel].alias.clone().unwrap_or_default();
+                self.edit = Some((Edit::Saved(self.saved_sel), cur));
+            }
             KeyCode::Char('d') if self.saved_sel < self.saved.len() => {
                 self.saved.remove(self.saved_sel);
                 self.saved_sel = self.saved_sel.min(self.saved.len().saturating_sub(1));
@@ -171,7 +202,37 @@ impl Picker {
         Action::None
     }
 
+    fn on_edit_key(&mut self, code: KeyCode) {
+        let Some((target, buf)) = &mut self.edit else {
+            return;
+        };
+        match code {
+            KeyCode::Esc => self.edit = None,
+            KeyCode::Backspace => drop(buf.pop()),
+            KeyCode::Char(c) if buf.chars().count() < 40 => buf.push(c),
+            KeyCode::Enter => {
+                let text = buf.trim().to_string();
+                let alias = (!text.is_empty()).then_some(text);
+                match target {
+                    Edit::Pending => self.alias = alias.unwrap_or_default(),
+                    Edit::Saved(i) => {
+                        if let Some(s) = self.saved.get_mut(*i) {
+                            s.alias = alias;
+                            self.error = store(&self.saved).is_err();
+                        }
+                    }
+                }
+                self.edit = None;
+            }
+            _ => {}
+        }
+    }
+
     pub(super) fn on_key(&mut self, code: KeyCode) -> Action {
+        if self.edit.is_some() {
+            self.on_edit_key(code);
+            return Action::None;
+        }
         if self.view == View::Saved {
             return self.on_saved_key(code);
         }
@@ -189,17 +250,31 @@ impl Picker {
             KeyCode::Char(' ') if !self.items.is_empty() => self.toggle(self.sel),
             KeyCode::Char('g') => self.toggle_group(),
             KeyCode::Char('c') => self.picked.clear(),
+            KeyCode::Char('n') => self.edit = Some((Edit::Pending, self.alias.clone())),
             KeyCode::Enter => {
                 if self.picked.len() < 2 {
                     self.error = true;
                 } else {
                     let items = self.picked.iter().map(|&i| self.items[i].clone()).collect();
-                    return Action::Start(items);
+                    let alias = (!self.alias.is_empty()).then(|| self.alias.clone());
+                    return Action::Start(items, alias);
                 }
             }
             _ => {}
         }
         Action::None
+    }
+
+    fn edit_line(&self) -> Option<Line<'static>> {
+        let (_, buf) = self.edit.as_ref()?;
+        Some(Line::from(vec![
+            Span::styled(tr("alias: ", "alias: "), bold(c_accent())),
+            Span::styled(format!("{buf}▏"), fg(c_fg())),
+            Span::styled(
+                tr("  Enter ok · Esc cancelar", "  Enter ok · Esc cancel"),
+                fg(c_dim()),
+            ),
+        ]))
     }
 
     fn draw_saved(&self, f: &mut Frame, area: Rect) {
@@ -228,7 +303,7 @@ impl Picker {
                 .take(visible)
                 .map(|(i, s)| {
                     let n = s.dirs.len();
-                    let text = trunc(&format!("{}  ({n})", s.name), w.saturating_sub(2));
+                    let text = trunc(&format!("{}  ({n})", s.label()), w.saturating_sub(2));
                     if i == self.saved_sel {
                         Line::styled(format!("▶ {text}"), bold(c_bg()).bg(c_accent()))
                     } else {
@@ -238,7 +313,9 @@ impl Picker {
                 .collect()
         };
         lines.push(Line::default());
-        lines.push(if self.error {
+        lines.push(if let Some(l) = self.edit_line() {
+            l
+        } else if self.error {
             Line::styled(
                 tr("✖ no se pudo guardar", "✖ could not save"),
                 fg(c_error()),
@@ -246,8 +323,8 @@ impl Picker {
         } else {
             Line::styled(
                 tr(
-                    "↑↓ · Enter abrir · d borrar · Tab elegir proyectos · Esc",
-                    "↑↓ · Enter open · d delete · Tab pick projects · Esc",
+                    "↑↓ · Enter abrir · r alias · d borrar · Tab elegir · Esc",
+                    "↑↓ · Enter open · r alias · d delete · Tab pick · Esc",
                 ),
                 fg(c_dim()),
             )
@@ -315,19 +392,18 @@ impl Picker {
             })
             .collect();
         lines.push(Line::default());
-        lines.push(if self.error {
+        lines.push(if let Some(l) = self.edit_line() {
+            l
+        } else if self.error {
             Line::from(Span::styled(
-                tr(
-                    "✖ elige al menos 2 proyectos",
-                    "✖ pick at least 2 projects",
-                ),
+                tr("✖ elige al menos 2 proyectos", "✖ pick at least 2 projects"),
                 fg(c_error()),
             ))
         } else {
             Line::styled(
                 tr(
-                    "↑↓ · Espacio elegir (1º = cwd) · g grupo · c limpiar · Enter iniciar · Tab guardadas",
-                    "↑↓ · Space pick (1st = cwd) · g group · c clear · Enter start · Tab saved",
+                    "↑↓ · Espacio · g grupo · c limpiar · n alias · Enter iniciar · Tab guardadas",
+                    "↑↓ · Space · g group · c clear · n alias · Enter start · Tab saved",
                 ),
                 fg(c_dim()),
             )
@@ -337,11 +413,18 @@ impl Picker {
             Paragraph::new(lines).block(
                 block(
                     Line::styled(
-                        tr_fmt!(
-                            " Sesión multiproyecto · {} elegidos ",
-                            " Multi-project session · {} picked ",
-                            self.picked.len()
-                        ),
+                        {
+                            let alias = if self.alias.is_empty() {
+                                String::new()
+                            } else {
+                                format!("· {} ", self.alias)
+                            };
+                            tr_fmt!(
+                                " Sesión multiproyecto · {} elegidos {alias}",
+                                " Multi-project session · {} picked {alias}",
+                                self.picked.len()
+                            )
+                        },
                         bold(c_accent()),
                     ),
                     c_accent(),
@@ -396,7 +479,7 @@ mod tests {
         assert!(p.error);
         p.on_key(KeyCode::End);
         p.on_key(KeyCode::Char(' '));
-        let Action::Start(items) = p.on_key(KeyCode::Enter) else {
+        let Action::Start(items, _) = p.on_key(KeyCode::Enter) else {
             panic!("expected start")
         };
         let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
@@ -422,6 +505,7 @@ mod tests {
     fn upsert_replaces_same_folders_and_tab_switches_view() {
         let s = |n: &str, d: &[&str]| Saved {
             name: n.into(),
+            alias: None,
             dirs: d.iter().map(|x| x.to_string()).collect(),
             group: None,
         };
@@ -444,10 +528,36 @@ mod tests {
             panic!("expected open")
         };
         assert_eq!(o.name, "new");
+        p.on_key(KeyCode::Char('r'));
+        "my".chars().for_each(|c| drop(p.on_key(KeyCode::Char(c))));
+        p.on_key(KeyCode::Enter);
+        assert_eq!(p.saved[1].alias.as_deref(), Some("my"));
+        assert_eq!(p.saved[1].label(), "my");
         p.on_key(KeyCode::Char('d'));
         assert_eq!(p.saved.len(), 1);
         p.on_key(KeyCode::Tab);
         assert!(p.view == View::Pick);
+    }
+
+    #[test]
+    fn pending_alias_goes_with_start_and_survives_upsert() {
+        let mut p = picker();
+        p.on_key(KeyCode::Char('g'));
+        p.on_key(KeyCode::Char('n'));
+        p.on_key(KeyCode::Char('q')); // typed into the box, not a close
+        p.on_key(KeyCode::Char('x'));
+        p.on_key(KeyCode::Backspace);
+        p.on_key(KeyCode::Enter);
+        let Action::Start(items, alias) = p.on_key(KeyCode::Enter) else {
+            panic!("expected start")
+        };
+        assert_eq!(alias.as_deref(), Some("q"));
+        let first = Saved::from_items(&items, alias);
+        let mut l = vec![first.clone()];
+        upsert(&mut l, Saved::from_items(&items, None));
+        assert_eq!(l[0].alias.as_deref(), Some("q"));
+        let text = toml::to_string(&File { sessions: l }).unwrap();
+        assert!(text.contains("alias = \"q\""));
     }
 
     #[test]

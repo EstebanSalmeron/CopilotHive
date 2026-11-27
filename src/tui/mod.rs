@@ -764,10 +764,10 @@ impl App {
             match m.on_key(code) {
                 multi::Action::None => {}
                 multi::Action::Close => self.multi = None,
-                multi::Action::Start(items) => {
+                multi::Action::Start(items, alias) => {
                     self.multi = None;
-                    let saved = multi::Saved::from_items(&items);
-                    let note = multi::remember(&saved).err();
+                    let saved = multi::Saved::from_items(&items, alias);
+                    let (saved, note) = multi::remember(saved);
                     self.open_multi(saved);
                     if let Some(e) = note {
                         let t = &mut self.tabs[self.current];
@@ -1127,7 +1127,14 @@ impl App {
         };
         let id = self.next_id;
         self.next_id += 1;
-        let mut tab = spawn_tab(id, saved.name, first.clone(), rest.to_vec(), None, &self.tx);
+        let mut tab = spawn_tab(
+            id,
+            saved.label().to_string(),
+            first.clone(),
+            rest.to_vec(),
+            None,
+            &self.tx,
+        );
         tab.group = saved.group;
         self.tabs.push(tab);
         self.current = self.tabs.len() - 1;
