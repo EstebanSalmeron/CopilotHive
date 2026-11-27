@@ -16,6 +16,7 @@
 | Normal | `d` | dashboard: mostrar / ocultar |
 | Normal | `s` | vista completa de subagentes: abrir / cerrar |
 | Normal | `H` | historial: sesiones anteriores del proyecto (`↑↓` elegir, `Enter` abrir, `r` reanudar en una pestaña nueva (`session/load`), `Esc` volver/cerrar; en la conversación `↑↓ PgUp/PgDn Home/End`) |
+| Normal | `g` | sesión multiproyecto: elige varios proyectos abiertos (`↑↓` mover, `Espacio` elegir —el 1º es el `cwd`—, `g` elegir/quitar todo el grupo, `c` limpiar, `Enter` iniciar con ≥2, `Esc` cerrar). Abre una pestaña `a + b +N` en el grupo del 1º, con `copilot --acp --stdio --add-dir <resto>`: la sesión puede acceder a todas las carpetas, pero el contexto, el historial y los agentes/skills de proyecto son los del 1º. `/clear`, `/restart` y `H`→`r` conservan las carpetas extra |
 | Normal | `o` | abrir carpeta: explorador de directorios para abrir una nueva pestaña con sesión ACP nueva |
 | Abrir | `↑↓` / `j k`, `PgUp/PgDn`, `Home/End` | mover selección en el explorador |
 | Abrir | `Enter` / `→` / `l` | entrar en la carpeta seleccionada (o `..`; los archivos se muestran atenuados y no se abren) |

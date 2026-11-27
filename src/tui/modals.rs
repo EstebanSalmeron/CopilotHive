@@ -204,6 +204,13 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect) {
             tr("grupo anterior / siguiente", "previous / next group"),
         ),
         (
+            "g",
+            tr(
+                "sesión multiproyecto (--add-dir)",
+                "multi-project session (--add-dir)",
+            ),
+        ),
+        (
             "!",
             tr(
                 "saltar al proyecto con permiso pendiente",

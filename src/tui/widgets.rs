@@ -241,6 +241,9 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     if let Some(m) = &app.mcp {
         m.draw(f, area);
     }
+    if let Some(m) = &app.multi {
+        m.draw(f, area);
+    }
     if let Some(p) = &app.prompts {
         p.draw(f, area);
     }

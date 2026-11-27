@@ -17,9 +17,11 @@ impl Drop for AbortOnDrop {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_project(
     idx: usize,
     cwd: String,
+    extra_dirs: Vec<String>,
     resume: Option<String>,
     disabled_mcp: Vec<String>,
     mut prompts: UnboundedReceiver<(String, Vec<String>)>,
@@ -32,7 +34,7 @@ async fn run_project(
     let mut on_perm = |p: Perm| {
         let _ = tx.send((idx, Msg::Perm(p)));
     };
-    let mut c = acp::Client::spawn(&cwd, &disabled_mcp)?;
+    let mut c = acp::Client::spawn(&cwd, &extra_dirs, &disabled_mcp)?;
     let tx_warn = tx.clone();
     c.on_warn(move |w| {
         let _ = tx_warn.send((idx, Msg::Warn(w)));
@@ -162,6 +164,7 @@ pub(super) fn spawn_tab(
     i: usize,
     name: String,
     cwd: String,
+    extra_dirs: Vec<String>,
     resume: Option<String>,
     tx: &Tx,
 ) -> Tab {
@@ -175,6 +178,7 @@ pub(super) fn spawn_tab(
         .unwrap_or_default();
     let mut tab = Tab::new(name, ptx, ctl, defs, loaded);
     tab.cwd = cwd.clone();
+    tab.extra_dirs = extra_dirs.clone();
     let tx2 = tx.clone();
     let disabled_mcp = super::mcp::disabled(&tab.cwd);
     tab.mcp = super::mcp::discover(Path::new(&tab.cwd), home.as_deref())
@@ -185,7 +189,18 @@ pub(super) fn spawn_tab(
         })
         .collect();
     let task = tokio::spawn(async move {
-        if let Err(e) = run_project(i, cwd, resume, disabled_mcp, prx, crx, tx2.clone()).await {
+        if let Err(e) = run_project(
+            i,
+            cwd,
+            extra_dirs,
+            resume,
+            disabled_mcp,
+            prx,
+            crx,
+            tx2.clone(),
+        )
+        .await
+        {
             let _ = tx2.send((i, Msg::Failed(format!("{e:#}"))));
         }
     });

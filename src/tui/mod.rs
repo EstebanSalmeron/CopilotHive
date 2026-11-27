@@ -13,6 +13,7 @@ mod input;
 mod markdown;
 mod mcp;
 mod modals;
+mod multi;
 mod open;
 mod prompts;
 mod session;
@@ -165,6 +166,8 @@ struct Tab {
     mcp: Vec<(mcp::Server, bool)>,
     /// Project group; tabs without one form their own implicit group.
     group: Option<String>,
+    /// Extra directories the session may access (`copilot --add-dir`); empty for single projects.
+    extra_dirs: Vec<String>,
 }
 
 impl Drop for Tab {
@@ -212,6 +215,7 @@ impl Tab {
             dash_sel: None,
             mcp: vec![],
             group: None,
+            extra_dirs: vec![],
         }
     }
 
@@ -451,6 +455,7 @@ pub struct App {
     open: Option<open::Browser>,
     settings: Option<settings::Menu>,
     mcp: Option<mcp::Menu>,
+    multi: Option<multi::Picker>,
     prompts: Option<prompts::Menu>,
     month_label: String,
     month_sessions: HashMap<String, u64>,
@@ -562,6 +567,7 @@ impl App {
             || self.open.is_some()
             || self.settings.is_some()
             || self.mcp.is_some()
+            || self.multi.is_some()
             || self.prompts.is_some()
             || self.tabs[self.current].perm.is_some()
     }
@@ -754,6 +760,17 @@ impl App {
             }
             return false;
         }
+        if let Some(m) = &mut self.multi {
+            match m.on_key(code) {
+                multi::Action::None => {}
+                multi::Action::Close => self.multi = None,
+                multi::Action::Start(items) => {
+                    self.multi = None;
+                    self.open_multi(items);
+                }
+            }
+            return false;
+        }
         if let Some(p) = &mut self.prompts {
             match p.on_key(k) {
                 prompts::Action::None => {}
@@ -935,6 +952,7 @@ impl App {
             KeyCode::Char('A') => self.confirm = Some(Confirm::AllowAll),
             KeyCode::Char('m') => self.open_selector(true),
             KeyCode::Char('e') => self.open_selector(false),
+            KeyCode::Char('g') => self.open_multi_picker(),
             KeyCode::Char('M') => self.mcp = Some(mcp::Menu::new(&t.name, &t.cwd)),
             KeyCode::Char('p') => {
                 let draft = t.editor.text.clone();
@@ -1007,10 +1025,11 @@ impl App {
     fn restart_current(&mut self, fresh: bool) {
         let old = &self.tabs[self.current];
         let (name, cwd, group) = (old.name.clone(), old.cwd.clone(), old.group.clone());
+        let extra = old.extra_dirs.clone();
         let sid = if fresh { None } else { old.sid.clone() };
         let id = self.next_id;
         self.next_id += 1;
-        let mut tab = spawn_tab(id, name, cwd, sid, &self.tx);
+        let mut tab = spawn_tab(id, name, cwd, extra, sid, &self.tx);
         let note = if fresh {
             settings::tr(
                 "sesión nueva (/clear): contexto vacío; allow all y modelo se restablecen",
@@ -1043,9 +1062,10 @@ impl App {
             cur.cwd.clone(),
             cur.group.clone(),
         );
+        let extra = cur.extra_dirs.clone();
         let id = self.next_id;
         self.next_id += 1;
-        let mut tab = spawn_tab(id, name, cwd, Some(sid), &self.tx);
+        let mut tab = spawn_tab(id, name, cwd, extra, Some(sid), &self.tx);
         tab.group = group;
         tab.push(Item::Note(tr_fmt!(
             "sesión reanudada: {title}",
@@ -1065,8 +1085,46 @@ impl App {
             .unwrap_or_else(|| cwd.clone());
         let id = self.next_id;
         self.next_id += 1;
-        let mut tab = spawn_tab(id, name, cwd, None, &self.tx);
+        let mut tab = spawn_tab(id, name, cwd, vec![], None, &self.tx);
         tab.group = self.tabs[self.current].group.clone();
+        self.tabs.push(tab);
+        self.current = self.tabs.len() - 1;
+    }
+
+    /// Lists the single-project tabs (deduplicated by folder) for the multi-project picker.
+    fn open_multi_picker(&mut self) {
+        let mut items: Vec<multi::Item> = vec![];
+        let mut sel = 0;
+        for (i, t) in self.tabs.iter().enumerate() {
+            if t.extra_dirs.is_empty() && items.iter().all(|it| it.cwd != t.cwd) {
+                if i == self.current {
+                    sel = items.len();
+                }
+                items.push(multi::Item {
+                    name: t.name.clone(),
+                    cwd: t.cwd.clone(),
+                    group: t.group.clone(),
+                });
+            }
+        }
+        self.multi = Some(multi::Picker::new(items, sel));
+    }
+
+    /// Starts one session in the first project's folder with the others added via `--add-dir`.
+    fn open_multi(&mut self, items: Vec<multi::Item>) {
+        let Some(first) = items.first() else { return };
+        let extra = items.iter().skip(1).map(|i| i.cwd.clone()).collect();
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut tab = spawn_tab(
+            id,
+            multi::title(&items),
+            first.cwd.clone(),
+            extra,
+            None,
+            &self.tx,
+        );
+        tab.group = first.group.clone();
         self.tabs.push(tab);
         self.current = self.tabs.len() - 1;
     }
@@ -1239,7 +1297,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
             .with_context(|| format!("bad project path {}", p.path.display()))?
             .to_string_lossy()
             .into_owned();
-        let mut tab = spawn_tab(i, p.name.clone(), cwd, None, &tx);
+        let mut tab = spawn_tab(i, p.name.clone(), cwd, vec![], None, &tx);
         tab.group = p.group.clone();
         let settings = agents::settings_path();
         for (agent, model) in &p.agent_models {
@@ -1292,6 +1350,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         open: None,
         settings: None,
         mcp: None,
+        multi: None,
         prompts: None,
         month_label: month.label,
         month_sessions: HashMap::new(),
@@ -1402,6 +1461,7 @@ mod tests {
             open: None,
             settings: None,
             mcp: None,
+            multi: None,
             prompts: None,
             month_label: crate::history::current_month().label,
             month_sessions: HashMap::new(),
@@ -1602,6 +1662,34 @@ mod tests {
         assert_eq!(a.tabs[1].cwd, canonical.to_string_lossy());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn multi_picker_starts_session_with_extra_dirs() {
+        let mut ts: Vec<Tab> = ["a", "b", "c"]
+            .iter()
+            .map(|n| {
+                let mut t = tab(n);
+                t.cwd = format!("/tmp/hive-nonexistent/{n}");
+                t.group = Some("G".into());
+                t
+            })
+            .collect();
+        ts[1].extra_dirs = vec!["/x".into()]; // a multi tab is not offered
+        let mut a = app(ts);
+        a.on_key(key(KeyCode::Char('g')));
+        assert!(a.multi.is_some());
+        a.on_key(key(KeyCode::Char(' '))); // a
+        a.on_key(key(KeyCode::Char('j')));
+        a.on_key(key(KeyCode::Char(' '))); // c (b is skipped)
+        a.on_key(key(KeyCode::Enter));
+        assert!(a.multi.is_none());
+        assert_eq!(a.tabs.len(), 4);
+        let t = &a.tabs[3];
+        assert_eq!(t.name, "a + c");
+        assert_eq!(t.cwd, "/tmp/hive-nonexistent/a");
+        assert_eq!(t.extra_dirs, ["/tmp/hive-nonexistent/c"]);
+        assert_eq!((a.current, t.group.as_deref()), (3, Some("G")));
     }
 
     #[test]
