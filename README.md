@@ -82,7 +82,7 @@ If the file does not exist, Copilot Hive opens in the current working directory.
 | `m` / `e` | Change model / reasoning effort |
 | `H` / `o` | Session history / open folder in new tab |
 | `M` / `S` / `A` | MCP servers / settings (theme & language) / allow all |
-| `?` / `q` | Help / quit |
+| `?` / `q` | Help (in the selected language, English or Spanish) / quit |
 
 Full keybinding reference in [`docs/tui-keys.md`](docs/tui-keys.md).
 

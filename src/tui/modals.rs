@@ -317,14 +317,14 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect) {
             ),
         ),
         (
-            "Enter (subagentes)",
+            tr("Enter (subagentes)", "Enter (subagents)"),
             tr(
                 "abre el prompt para pedir a Copilot que use el agente elegido",
                 "opens the prompt asking Copilot to use the selected agent",
             ),
         ),
         (
-            "↑ ↓ (subagentes)",
+            tr("↑ ↓ (subagentes)", "↑ ↓ (subagents)"),
             tr(
                 "elegir agente; m fija su modelo obligatorio 🔒",
                 "pick agent; m sets its required model 🔒",
