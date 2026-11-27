@@ -71,6 +71,7 @@ If the file does not exist, Copilot Hive opens in the current working directory.
 |-----|--------|
 | `Tab` / `Alt+1..9` | Switch project tab within the current group |
 | `}` / `{` | Next / previous group |
+| `x` | Close the current tab (asks first if it is working; the last tab can't be closed) |
 | `g` | Multi-project session: `/` fuzzy search, `Space` pick (first = `cwd`), `a` all, `g` whole group, `c` clear, `Enter` start (always asks for an alias first; empty = none), `n` alias, `Tab` saved sessions (`Enter` open, `r` alias, `d` twice to delete) · `G` opens the saved list directly |
 | `Enter` / `i` | Compose prompt (`Alt+Enter` / `Ctrl+J` newline, `Ctrl+S` save prompt, `Ctrl+V` paste image on macOS) |
 | `f` | Open prompt prefilled with `/fleet ` |
