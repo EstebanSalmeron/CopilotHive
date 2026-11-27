@@ -27,9 +27,10 @@ pub(super) struct Saved {
     pub alias: Option<String>,
     /// Folders; the first is the session `cwd`, the rest go through `--add-dir`.
     pub dirs: Vec<String>,
-    #[serde(default)]
-    pub group: Option<String>,
 }
+
+/// Group every multi-project session lives in.
+pub(super) const GROUP: &str = "Custom Grouping";
 
 impl Saved {
     /// Tab title: the alias when set, otherwise the generated name.
@@ -42,7 +43,6 @@ impl Saved {
             name: title(items),
             alias,
             dirs: items.iter().map(|i| i.cwd.clone()).collect(),
-            group: items.first().and_then(|i| i.group.clone()),
         }
     }
 }
@@ -507,7 +507,6 @@ mod tests {
             name: n.into(),
             alias: None,
             dirs: d.iter().map(|x| x.to_string()).collect(),
-            group: None,
         };
         let mut l = vec![s("old", &["/a", "/b"]), s("other", &["/c", "/d"])];
         upsert(&mut l, s("new", &["/a", "/b"]));

@@ -1135,7 +1135,7 @@ impl App {
             None,
             &self.tx,
         );
-        tab.group = saved.group;
+        tab.group = Some(multi::GROUP.into());
         self.tabs.push(tab);
         self.current = self.tabs.len() - 1;
     }
@@ -1700,7 +1700,7 @@ mod tests {
         assert_eq!(t.name, "a + c");
         assert_eq!(t.cwd, "/tmp/hive-nonexistent/a");
         assert_eq!(t.extra_dirs, ["/tmp/hive-nonexistent/c"]);
-        assert_eq!((a.current, t.group.as_deref()), (3, Some("G")));
+        assert_eq!((a.current, t.group.as_deref()), (3, Some(multi::GROUP)));
     }
 
     #[test]
