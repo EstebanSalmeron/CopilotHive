@@ -9,7 +9,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Paragraph};
+use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use std::borrow::Cow;
 use std::time::Duration;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -227,6 +227,32 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     } else if let Some(pos) = cursor.filter(|_| t.typing && !modal_open) {
         f.set_cursor_position(pos);
     }
+    if app.custom_empty() {
+        let r = Rect::new(area.x, info.y, area.width, info.height + 1 + body.height);
+        f.render_widget(Clear, r);
+        f.render_widget(
+            Paragraph::new(vec![
+                Line::styled(
+                    tr_fmt!(
+                        "«{}» está vacío",
+                        "“{}” is empty",
+                        crate::tui::multi::GROUP
+                    ),
+                    bold(c_accent()),
+                ),
+                Line::default(),
+                Line::styled(
+                    tr(
+                        "g crear una sesión multiproyecto · G ver/borrar las guardadas · { } cambiar de grupo",
+                        "g create a multi-project session · G see/delete saved ones · { } switch group",
+                    ),
+                    fg(c_dim()),
+                ),
+            ])
+            .alignment(Alignment::Center),
+            centered(r, r.width, 3),
+        );
+    }
     if let Some(h) = &mut app.history {
         h.draw(
             f,
@@ -268,7 +294,7 @@ fn windowed(items: Vec<Vec<Span<'_>>>, active: usize, width: usize) -> Line<'_> 
 
 fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
     let groups = app.groups();
-    let cur_group = app.tabs[app.current].group.as_deref();
+    let cur_group = app.cur_group();
     let group_items: Vec<Vec<Span>> = if groups.len() > 1 {
         groups
             .iter()
@@ -286,7 +312,15 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
                 } else {
                     fg(c_dim())
                 };
-                let mut v = vec![Span::styled(format!(" {} {n} ", g.unwrap_or("—")), style)];
+                let count = if *g == Some(crate::tui::multi::GROUP) {
+                    format!("{n}/{}", app.saved_n)
+                } else {
+                    n.to_string()
+                };
+                let mut v = vec![Span::styled(
+                    format!(" {} {count} ", g.unwrap_or("—")),
+                    style,
+                )];
                 if perm {
                     v.push(Span::styled("!", bold(c_error())));
                 } else if work {
@@ -1599,7 +1633,7 @@ mod tests {
     fn status_bar_shows_group_and_multi_session_keys() {
         let mut a = app(vec![tab("a")]);
         let s = screen(&mut a, 200, 20);
-        assert!(s.contains(" g ") && !s.contains(" { } "), "{s}");
+        assert!(s.contains(" g "), "{s}");
         let mut b = tab("b");
         b.group = Some("X".into());
         a.tabs[0].group = Some("Y".into());

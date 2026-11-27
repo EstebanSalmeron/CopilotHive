@@ -456,6 +456,10 @@ pub struct App {
     settings: Option<settings::Menu>,
     mcp: Option<mcp::Menu>,
     multi: Option<multi::Picker>,
+    /// Tab that was current when the (empty) custom group was selected; see `custom_empty`.
+    empty_view: Option<usize>,
+    /// Number of sessions in sessions.toml, shown on the custom group chip.
+    pub(super) saved_n: usize,
     prompts: Option<prompts::Menu>,
     month_label: String,
     month_sessions: HashMap<String, u64>,
@@ -675,15 +679,34 @@ impl App {
 
     /// Indices of the tabs in the current tab's group, in tab order.
     pub(super) fn group_tabs(&self) -> Vec<usize> {
-        let g = &self.tabs[self.current].group;
+        let g = self.cur_group();
         (0..self.tabs.len())
-            .filter(|&i| self.tabs[i].group == *g)
+            .filter(|&i| self.tabs[i].group.as_deref() == g)
             .collect()
     }
 
-    /// Distinct groups in order of first appearance (`None` = ungrouped tabs).
+    /// The custom group has no tabs yet and is the one being viewed. It stays "viewed" only
+    /// while `current` is unchanged, so any tab switch leaves it.
+    pub(super) fn custom_empty(&self) -> bool {
+        self.empty_view == Some(self.current)
+            && !self
+                .tabs
+                .iter()
+                .any(|t| t.group.as_deref() == Some(multi::GROUP))
+    }
+
+    pub(super) fn cur_group(&self) -> Option<&str> {
+        if self.custom_empty() {
+            Some(multi::GROUP)
+        } else {
+            self.tabs[self.current].group.as_deref()
+        }
+    }
+
+    /// The custom group first (even with no tabs), then the others in order of first
+    /// appearance (`None` = ungrouped tabs).
     pub(super) fn groups(&self) -> Vec<Option<&str>> {
-        let mut out: Vec<Option<&str>> = vec![];
+        let mut out: Vec<Option<&str>> = vec![Some(multi::GROUP)];
         for t in &self.tabs {
             let g = t.group.as_deref();
             if !out.contains(&g) {
@@ -703,11 +726,18 @@ impl App {
     /// Jumps to the first tab of the next/previous group; a no-op with a single group.
     fn switch_group(&mut self, delta: isize) -> bool {
         let groups = self.groups();
-        let cur = self.tabs[self.current].group.as_deref();
+        let cur = self.cur_group();
         let at = groups.iter().position(|g| *g == cur).unwrap_or(0);
         let to = groups[(at as isize + delta).rem_euclid(groups.len() as isize) as usize];
         if let Some(i) = self.tabs.iter().position(|t| t.group.as_deref() == to) {
             self.current = i;
+            self.empty_view = None;
+        } else {
+            self.empty_view = Some(self.current);
+            // Saved sessions are not reopened on startup; offer them when the group is selected.
+            if !multi::load().is_empty() {
+                self.open_multi_picker(true);
+            }
         }
         false
     }
@@ -761,7 +791,11 @@ impl App {
             return false;
         }
         if let Some(m) = &mut self.multi {
-            match m.on_key(code) {
+            let action = m.on_key(code);
+            if !matches!(action, multi::Action::None) {
+                self.saved_n = multi::load().len();
+            }
+            match action {
                 multi::Action::None => {}
                 multi::Action::Close => self.multi = None,
                 multi::Action::Start(items, alias) => {
@@ -778,6 +812,20 @@ impl App {
                     self.multi = None;
                     self.open_multi(saved);
                 }
+            }
+            return false;
+        }
+        if self.custom_empty() {
+            match code {
+                KeyCode::Char('{') => return self.switch_group(-1),
+                KeyCode::Char('}') => return self.switch_group(1),
+                KeyCode::Char('g') => self.open_multi_picker(false),
+                KeyCode::Char('G') => self.open_multi_picker(true),
+                KeyCode::Char('q') if self.tabs.iter().any(Tab::working) => {
+                    self.confirm = Some(Confirm::Quit);
+                }
+                KeyCode::Char('q') => return true,
+                _ => {}
             }
             return false;
         }
@@ -962,7 +1010,8 @@ impl App {
             KeyCode::Char('A') => self.confirm = Some(Confirm::AllowAll),
             KeyCode::Char('m') => self.open_selector(true),
             KeyCode::Char('e') => self.open_selector(false),
-            KeyCode::Char('g') => self.open_multi_picker(),
+            KeyCode::Char('g') => self.open_multi_picker(false),
+            KeyCode::Char('G') => self.open_multi_picker(true),
             KeyCode::Char('M') => self.mcp = Some(mcp::Menu::new(&t.name, &t.cwd)),
             KeyCode::Char('p') => {
                 let draft = t.editor.text.clone();
@@ -1102,7 +1151,7 @@ impl App {
     }
 
     /// Lists the single-project tabs (deduplicated by folder) for the multi-project picker.
-    fn open_multi_picker(&mut self) {
+    fn open_multi_picker(&mut self, saved: bool) {
         let mut items: Vec<multi::Item> = vec![];
         let mut sel = 0;
         for (i, t) in self.tabs.iter().enumerate() {
@@ -1117,7 +1166,8 @@ impl App {
                 });
             }
         }
-        self.multi = Some(multi::Picker::new(items, sel, multi::load()));
+        let p = multi::Picker::new(items, sel, multi::load());
+        self.multi = Some(if saved { p.show_saved() } else { p });
     }
 
     /// Starts one session in the first folder with the others added via `--add-dir`.
@@ -1227,6 +1277,9 @@ impl App {
     /// Cycles through the tabs of the current group.
     fn switch_by(&mut self, delta: isize) -> bool {
         let tabs = self.group_tabs();
+        if tabs.is_empty() {
+            return false;
+        }
         let at = tabs.iter().position(|&i| i == self.current).unwrap_or(0);
         self.current = tabs[(at as isize + delta).rem_euclid(tabs.len() as isize) as usize];
         false
@@ -1346,6 +1399,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         });
     }
     let mut app = App {
+        saved_n: multi::load().len(),
         next_id: tabs.len(),
         tabs,
         current: 0,
@@ -1362,6 +1416,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         settings: None,
         mcp: None,
         multi: None,
+        empty_view: None,
         prompts: None,
         month_label: month.label,
         month_sessions: HashMap::new(),
@@ -1457,6 +1512,7 @@ mod tests {
     pub(super) fn app(mut tabs: Vec<Tab>) -> App {
         tabs.iter_mut().enumerate().for_each(|(i, t)| t.id = i);
         App {
+            saved_n: 0,
             next_id: tabs.len(),
             tabs,
             current: 0,
@@ -1473,6 +1529,7 @@ mod tests {
             settings: None,
             mcp: None,
             multi: None,
+            empty_view: None,
             prompts: None,
             month_label: crate::history::current_month().label,
             month_sessions: HashMap::new(),
@@ -1525,7 +1582,14 @@ mod tests {
         a.on_key(key(KeyCode::Char('{')));
         assert_eq!(a.current, 0);
         a.on_key(key(KeyCode::Char('{')));
-        assert_eq!(a.current, 1); // wraps around
+        assert!(a.custom_empty()); // the custom group comes first, even when empty
+        assert!(a.group_tabs().is_empty());
+        a.multi = None; // the saved-sessions list may open here
+        a.on_key(key(KeyCode::Char('x'))); // keys can't reach the hidden tab
+        assert!(a.tabs[0].editor.is_empty() && a.tabs.len() == 4);
+        a.on_key(key(KeyCode::Char('{')));
+        assert_eq!((a.custom_empty(), a.current), (false, 1)); // wraps around
+        assert_eq!(a.groups()[0], Some(multi::GROUP));
     }
 
     #[test]
@@ -1693,6 +1757,8 @@ mod tests {
         a.on_key(key(KeyCode::Char(' '))); // a
         a.on_key(key(KeyCode::Char('j')));
         a.on_key(key(KeyCode::Char(' '))); // c (b is skipped)
+        a.on_key(key(KeyCode::Enter));
+        assert!(a.multi.is_some()); // alias prompt
         a.on_key(key(KeyCode::Enter));
         assert!(a.multi.is_none());
         assert_eq!(a.tabs.len(), 4);

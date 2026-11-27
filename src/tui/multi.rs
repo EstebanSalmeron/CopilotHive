@@ -114,6 +114,8 @@ enum Edit {
     Pending,
     /// The alias of the saved session at this index.
     Saved(usize),
+    /// Asked after picking, right before the session starts.
+    Start,
 }
 
 #[derive(PartialEq)]
@@ -122,10 +124,37 @@ enum View {
     Saved,
 }
 
+/// Fuzzy score of `query` as a case-insensitive subsequence of `text`; `None` if it doesn't match.
+/// Consecutive characters and word starts score higher, gaps cost a little.
+fn fuzzy(query: &str, text: &str) -> Option<i32> {
+    let hay: Vec<char> = text.to_lowercase().chars().collect();
+    let (mut at, mut score, mut prev) = (0, 0, None::<usize>);
+    for q in query.to_lowercase().chars().filter(|c| !c.is_whitespace()) {
+        let found = (at..hay.len()).find(|&i| hay[i] == q)?;
+        score += 10;
+        if prev == Some(found.wrapping_sub(1)) {
+            score += 15;
+        }
+        if found == 0 || matches!(hay[found - 1], '-' | '_' | ' ' | '/' | '.') {
+            score += 10;
+        }
+        score -= (found - at) as i32;
+        prev = Some(found);
+        at = found + 1;
+    }
+    Some(score)
+}
+
 pub(super) struct Picker {
     items: Vec<Item>,
     /// Indices into `items`, in the order they were picked.
     picked: Vec<usize>,
+    /// Indices into `items` that match `filter`, best match first.
+    vis: Vec<usize>,
+    filter: String,
+    /// The filter box has the keyboard (letters are typed instead of acting as shortcuts).
+    typing: bool,
+    /// Highlighted row in `vis`.
     sel: usize,
     error: bool,
     view: View,
@@ -133,6 +162,8 @@ pub(super) struct Picker {
     saved_sel: usize,
     alias: String,
     edit: Option<(Edit, String)>,
+    /// `d` was pressed once on a saved session; a second press deletes it.
+    confirm_del: bool,
 }
 
 impl Picker {
@@ -143,10 +174,58 @@ impl Picker {
             saved_sel: 0,
             alias: String::new(),
             edit: None,
+            confirm_del: false,
+            vis: (0..items.len()).collect(),
+            filter: String::new(),
+            typing: false,
             sel: sel.min(items.len().saturating_sub(1)),
             items,
             picked: vec![],
             error: false,
+        }
+    }
+
+    /// Index into `items` of the highlighted row.
+    fn cur(&self) -> Option<usize> {
+        self.vis.get(self.sel).copied()
+    }
+
+    /// Recomputes `vis` after the filter changed, keeping the highlighted project when possible.
+    fn refilter(&mut self) {
+        let keep = self.cur();
+        let mut scored: Vec<(i32, usize)> = self
+            .items
+            .iter()
+            .enumerate()
+            .filter_map(|(i, it)| {
+                let hay = format!("{} {}", it.name, it.group.as_deref().unwrap_or(""));
+                fuzzy(&self.filter, &hay).map(|sc| (sc, i))
+            })
+            .collect();
+        if !self.filter.is_empty() {
+            scored.sort_by_key(|&(sc, i)| (std::cmp::Reverse(sc), i));
+        }
+        self.vis = scored.into_iter().map(|(_, i)| i).collect();
+        self.sel = keep
+            .and_then(|k| self.vis.iter().position(|&v| v == k))
+            .unwrap_or(0);
+    }
+
+    fn on_filter_key(&mut self, code: KeyCode) {
+        match code {
+            KeyCode::Esc | KeyCode::Enter => self.typing = false,
+            KeyCode::Backspace => {
+                self.filter.pop();
+                self.refilter();
+            }
+            KeyCode::Char(c) if self.filter.chars().count() < 40 => {
+                self.filter.push(c);
+                self.refilter();
+                self.sel = 0;
+            }
+            KeyCode::Up => self.sel = self.sel.saturating_sub(1),
+            KeyCode::Down => self.sel = (self.sel + 1).min(self.vis.len().saturating_sub(1)),
+            _ => {}
         }
     }
 
@@ -157,24 +236,30 @@ impl Picker {
         }
     }
 
-    /// Picks every project, or clears the selection if all are already picked.
+    /// Picks every listed project (all, or the filter's matches), or drops them if all are picked.
     fn toggle_all(&mut self) {
-        if self.picked.len() == self.items.len() {
-            self.picked.clear();
+        if self.vis.iter().all(|v| self.picked.contains(v)) {
+            self.picked.retain(|p| !self.vis.contains(p));
         } else {
-            let missing: Vec<usize> = (0..self.items.len())
+            let missing: Vec<usize> = self
+                .vis
+                .iter()
+                .copied()
                 .filter(|i| !self.picked.contains(i))
                 .collect();
             self.picked.extend(missing);
         }
     }
 
-    /// Picks every project of the highlighted one's group, or drops them all if already picked.
+    /// Picks the listed projects of the highlighted one's group, or drops them if all are picked.
     fn toggle_group(&mut self) {
-        let Some(cur) = self.items.get(self.sel) else {
+        let Some(cur) = self.cur().map(|i| &self.items[i]) else {
             return;
         };
-        let members: Vec<usize> = (0..self.items.len())
+        let members: Vec<usize> = self
+            .vis
+            .iter()
+            .copied()
             .filter(|&i| self.items[i].group == cur.group)
             .collect();
         if members.iter().all(|m| self.picked.contains(m)) {
@@ -190,6 +275,7 @@ impl Picker {
 
     fn on_saved_key(&mut self, code: KeyCode) -> Action {
         let last = self.saved.len().saturating_sub(1);
+        let armed = std::mem::take(&mut self.confirm_del);
         match code {
             KeyCode::Esc | KeyCode::Char('q') => return Action::Close,
             KeyCode::Tab | KeyCode::BackTab => self.view = View::Pick,
@@ -204,6 +290,9 @@ impl Picker {
                 let cur = self.saved[self.saved_sel].alias.clone().unwrap_or_default();
                 self.edit = Some((Edit::Saved(self.saved_sel), cur));
             }
+            KeyCode::Char('d') if self.saved_sel < self.saved.len() && !armed => {
+                self.confirm_del = true;
+            }
             KeyCode::Char('d') if self.saved_sel < self.saved.len() => {
                 self.saved.remove(self.saved_sel);
                 self.saved_sel = self.saved_sel.min(self.saved.len().saturating_sub(1));
@@ -214,9 +303,9 @@ impl Picker {
         Action::None
     }
 
-    fn on_edit_key(&mut self, code: KeyCode) {
+    fn on_edit_key(&mut self, code: KeyCode) -> Action {
         let Some((target, buf)) = &mut self.edit else {
-            return;
+            return Action::None;
         };
         match code {
             KeyCode::Esc => self.edit = None,
@@ -227,6 +316,11 @@ impl Picker {
                 let alias = (!text.is_empty()).then_some(text);
                 match target {
                     Edit::Pending => self.alias = alias.unwrap_or_default(),
+                    Edit::Start => {
+                        self.alias = alias.unwrap_or_default();
+                        self.edit = None;
+                        return self.start();
+                    }
                     Edit::Saved(i) => {
                         if let Some(s) = self.saved.get_mut(*i) {
                             s.alias = alias;
@@ -238,20 +332,41 @@ impl Picker {
             }
             _ => {}
         }
+        Action::None
+    }
+
+    fn start(&self) -> Action {
+        let items = self.picked.iter().map(|&i| self.items[i].clone()).collect();
+        let alias = (!self.alias.is_empty()).then(|| self.alias.clone());
+        Action::Start(items, alias)
+    }
+
+    /// Opens the picker on the saved-sessions list.
+    pub(super) fn show_saved(mut self) -> Self {
+        self.view = View::Saved;
+        self
     }
 
     pub(super) fn on_key(&mut self, code: KeyCode) -> Action {
         if self.edit.is_some() {
-            self.on_edit_key(code);
-            return Action::None;
+            return self.on_edit_key(code);
         }
         if self.view == View::Saved {
             return self.on_saved_key(code);
         }
+        if self.typing {
+            self.on_filter_key(code);
+            return Action::None;
+        }
         self.error = false;
-        let last = self.items.len().saturating_sub(1);
+        let last = self.vis.len().saturating_sub(1);
         match code {
+            KeyCode::Esc if !self.filter.is_empty() => {
+                self.filter.clear();
+                self.refilter();
+            }
             KeyCode::Esc | KeyCode::Char('q') => return Action::Close,
+            KeyCode::Char('/') => self.typing = true,
             KeyCode::Tab | KeyCode::BackTab => self.view = View::Saved,
             KeyCode::Up | KeyCode::Char('k') => self.sel = self.sel.saturating_sub(1),
             KeyCode::Down | KeyCode::Char('j') => self.sel = (self.sel + 1).min(last),
@@ -259,7 +374,11 @@ impl Picker {
             KeyCode::PageDown => self.sel = (self.sel + 10).min(last),
             KeyCode::Home => self.sel = 0,
             KeyCode::End => self.sel = last,
-            KeyCode::Char(' ') if !self.items.is_empty() => self.toggle(self.sel),
+            KeyCode::Char(' ') => {
+                if let Some(i) = self.cur() {
+                    self.toggle(i);
+                }
+            }
             KeyCode::Char('g') => self.toggle_group(),
             KeyCode::Char('a') => self.toggle_all(),
             KeyCode::Char('c') => self.picked.clear(),
@@ -268,9 +387,7 @@ impl Picker {
                 if self.picked.len() < 2 {
                     self.error = true;
                 } else {
-                    let items = self.picked.iter().map(|&i| self.items[i].clone()).collect();
-                    let alias = (!self.alias.is_empty()).then(|| self.alias.clone());
-                    return Action::Start(items, alias);
+                    self.edit = Some((Edit::Start, self.alias.clone()));
                 }
             }
             _ => {}
@@ -279,14 +396,18 @@ impl Picker {
     }
 
     fn edit_line(&self) -> Option<Line<'static>> {
-        let (_, buf) = self.edit.as_ref()?;
+        let (target, buf) = self.edit.as_ref()?;
+        let hint = match target {
+            Edit::Start => tr(
+                "  Enter iniciar (vacío = sin alias) · Esc volver",
+                "  Enter start (empty = no alias) · Esc back",
+            ),
+            _ => tr("  Enter ok · Esc cancelar", "  Enter ok · Esc cancel"),
+        };
         Some(Line::from(vec![
             Span::styled(tr("alias: ", "alias: "), bold(c_accent())),
             Span::styled(format!("{buf}▏"), fg(c_fg())),
-            Span::styled(
-                tr("  Enter ok · Esc cancelar", "  Enter ok · Esc cancel"),
-                fg(c_dim()),
-            ),
+            Span::styled(hint, fg(c_dim())),
         ]))
     }
 
@@ -333,6 +454,14 @@ impl Picker {
                 tr("✖ no se pudo guardar", "✖ could not save"),
                 fg(c_error()),
             )
+        } else if self.confirm_del {
+            Line::styled(
+                tr(
+                    "¿borrar esta sesión? pulsa d otra vez · otra tecla cancela",
+                    "delete this session? press d again · any other key cancels",
+                ),
+                bold(c_attention()),
+            )
         } else {
             Line::styled(
                 tr(
@@ -366,21 +495,22 @@ impl Picker {
         if self.view == View::Saved {
             return self.draw_saved(f, area);
         }
-        let h = (self.items.len() as u16 + 4).min(area.height.saturating_sub(2));
-        let rows = h.saturating_sub(4) as usize;
+        let h = (self.items.len() as u16 + 5).min(area.height.saturating_sub(2));
+        let rows = h.saturating_sub(5) as usize;
         let r = centered(area, area.width.min(92), h);
         let off = self
             .sel
             .saturating_sub(rows.saturating_sub(1))
-            .min(self.items.len().saturating_sub(rows));
+            .min(self.vis.len().saturating_sub(rows));
         let w = r.width.saturating_sub(4) as usize;
         let mut lines: Vec<Line<'static>> = self
-            .items
+            .vis
             .iter()
             .enumerate()
             .skip(off)
             .take(rows)
-            .map(|(i, it)| {
+            .map(|(row, &i)| {
+                let it = &self.items[i];
                 let mark = match self.picked.iter().position(|&p| p == i) {
                     Some(n) => format!("[{}]", n + 1),
                     None => "[ ]".into(),
@@ -392,7 +522,7 @@ impl Picker {
                     trunc(&it.name, name_w),
                     name_w = name_w
                 );
-                if i == self.sel {
+                if row == self.sel {
                     Line::styled(format!("▶ {text}"), bold(c_bg()).bg(c_accent()))
                 } else {
                     let c = if self.picked.contains(&i) {
@@ -404,9 +534,34 @@ impl Picker {
                 }
             })
             .collect();
-        lines.push(Line::default());
+        if self.vis.is_empty() {
+            lines.push(Line::styled(
+                tr("(sin coincidencias)", "(no matches)"),
+                fg(c_dim()),
+            ));
+        }
+        while lines.len() < rows.max(1) {
+            lines.push(Line::default());
+        }
         lines.push(if let Some(l) = self.edit_line() {
             l
+        } else if self.typing || !self.filter.is_empty() {
+            let cursor = if self.typing { "▏" } else { "" };
+            Line::from(vec![
+                Span::styled(tr("buscar: ", "search: "), bold(c_accent())),
+                Span::styled(format!("{}{cursor}", self.filter), fg(c_fg())),
+                Span::styled(
+                    if self.typing {
+                        tr(
+                            "  Enter ok · Esc salir · ↑↓ mover",
+                            "  Enter ok · Esc stop · ↑↓ move",
+                        )
+                    } else {
+                        tr("  / editar · Esc limpiar", "  / edit · Esc clear")
+                    },
+                    fg(c_dim()),
+                ),
+            ])
         } else if self.error {
             Line::from(Span::styled(
                 tr("✖ elige al menos 2 proyectos", "✖ pick at least 2 projects"),
@@ -415,12 +570,19 @@ impl Picker {
         } else {
             Line::styled(
                 tr(
-                    "↑↓ · Espacio · a todos · g grupo · c limpiar · n alias · Enter iniciar · Tab guardadas",
-                    "↑↓ · Space · a all · g group · c clear · n alias · Enter start · Tab saved",
+                    "Espacio elegir · a todos · g grupo · c limpiar · n alias",
+                    "Space pick · a all · g group · c clear · n alias",
                 ),
                 fg(c_dim()),
             )
         });
+        lines.push(Line::styled(
+            tr(
+                "/ buscar · Enter iniciar · Tab guardadas · Esc cerrar",
+                "/ search · Enter start · Tab saved · Esc close",
+            ),
+            fg(c_dim()),
+        ));
         f.render_widget(Clear, r);
         f.render_widget(
             Paragraph::new(lines).block(
@@ -492,6 +654,8 @@ mod tests {
         assert!(p.error);
         p.on_key(KeyCode::End);
         p.on_key(KeyCode::Char(' '));
+        assert!(matches!(p.on_key(KeyCode::Enter), Action::None));
+        assert!(p.edit.is_some()); // the alias is always asked before starting
         let Action::Start(items, _) = p.on_key(KeyCode::Enter) else {
             panic!("expected start")
         };
@@ -510,6 +674,57 @@ mod tests {
         assert_eq!(p.picked, [3, 0, 1, 2]);
         p.on_key(KeyCode::Char('a'));
         assert!(p.picked.is_empty());
+    }
+
+    #[test]
+    fn fuzzy_filter_ranks_matches_and_scopes_select_all() {
+        let mut p = Picker::new(
+            vec![
+                item("sales-core-order", "Core"),
+                item("sales-ui-order", "UI"),
+                item("customer-core", "Core"),
+            ],
+            0,
+            vec![],
+        );
+        assert_eq!(fuzzy("zzz", "sales"), None);
+        p.on_key(KeyCode::Char('/'));
+        "scor"
+            .chars()
+            .for_each(|c| drop(p.on_key(KeyCode::Char(c))));
+        assert_eq!(p.vis, [0, 2]); // "sales-ui-order" has no "c" after the "s"; the tighter match ranks first
+        p.on_key(KeyCode::Backspace);
+        p.on_key(KeyCode::Backspace);
+        p.on_key(KeyCode::Backspace);
+        "order"
+            .chars()
+            .for_each(|c| drop(p.on_key(KeyCode::Char(c))));
+        assert_eq!(p.vis.len(), 2);
+        p.on_key(KeyCode::Enter); // leave the box, keep the filter
+        assert!(!p.typing && !p.filter.is_empty());
+        p.on_key(KeyCode::Char('a')); // shortcut again, applied to matches only
+        assert_eq!(p.picked.len(), 2);
+        assert!(!p.picked.contains(&2));
+        assert!(matches!(p.on_key(KeyCode::Esc), Action::None)); // clears filter first
+        assert_eq!(p.vis.len(), 3);
+        assert!(matches!(p.on_key(KeyCode::Esc), Action::Close));
+    }
+
+    #[test]
+    fn renders_search_box_and_no_matches() {
+        use ratatui::Terminal;
+        use ratatui::backend::TestBackend;
+        let mut p = picker();
+        p.on_key(KeyCode::Char('/'));
+        p.on_key(KeyCode::Char('z'));
+        let mut term = Terminal::new(TestBackend::new(110, 30)).unwrap();
+        term.draw(|f| p.draw(f, f.area())).unwrap();
+        let buf = term.backend().buffer();
+        let text: String = (0..30)
+            .flat_map(|y| (0..110).map(move |x| (x, y)))
+            .map(|(x, y)| buf[(x, y)].symbol().to_string())
+            .collect();
+        assert!(text.contains("buscar: z") && text.contains("sin coincidencias"));
     }
 
     #[test]
@@ -557,6 +772,11 @@ mod tests {
         assert_eq!(p.saved[1].alias.as_deref(), Some("my"));
         assert_eq!(p.saved[1].label(), "my");
         p.on_key(KeyCode::Char('d'));
+        assert_eq!(p.saved.len(), 2); // needs a second press
+        p.on_key(KeyCode::Char('j')); // any other key cancels
+        p.on_key(KeyCode::Char('d'));
+        assert_eq!(p.saved.len(), 2);
+        p.on_key(KeyCode::Char('d'));
         assert_eq!(p.saved.len(), 1);
         p.on_key(KeyCode::Tab);
         assert!(p.view == View::Pick);
@@ -571,6 +791,8 @@ mod tests {
         p.on_key(KeyCode::Char('x'));
         p.on_key(KeyCode::Backspace);
         p.on_key(KeyCode::Enter);
+        p.on_key(KeyCode::Enter); // asks for the alias again, prefilled
+        assert_eq!(p.edit.as_ref().map(|e| e.1.as_str()), Some("q"));
         let Action::Start(items, alias) = p.on_key(KeyCode::Enter) else {
             panic!("expected start")
         };
