@@ -34,7 +34,7 @@
 | Normal | `!` | saltar al siguiente proyecto con permiso pendiente |
 | Normal | `?` | ayuda |
 | Normal | `C` / `R` | `/clear`: sesión ACP nueva en el mismo proyecto (contexto vacío) / `/restart`: reinicia el proceso y recarga la sesión (`session/load`) para aplicar cambios en agentes o MCP. Piden confirmación (`y`); allow all y modelo se restablecen. También se pueden escribir `/clear` o `/restart` como prompt (sin confirmación) |
-| Normal | `t` | tutorial animado de 6 páginas (`←→`/`Enter` navegar, `1-6` ir a, `Esc` cerrar); no se abre solo |
+| Normal | `t` | tutorial animado de 7 páginas (`←→`/`Enter` navegar, `1-7` ir a, `Esc` cerrar); no se abre solo |
 | Normal | `x` | cerrar la pestaña actual (confirma si trabaja; la última no se cierra) |
 | Normal | `q` | salir (confirma si hay agentes trabajando) |
 | Escribiendo | `Enter` | enviar |

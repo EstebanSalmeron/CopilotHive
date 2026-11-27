@@ -8,7 +8,7 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Clear, Padding, Paragraph};
 
-const PAGES: usize = 6;
+const PAGES: usize = 7;
 
 pub struct Tour {
     page: usize,
@@ -32,7 +32,7 @@ impl Tour {
                 self.page + 1
             }
             KeyCode::Left | KeyCode::Char('h') => self.page.saturating_sub(1),
-            KeyCode::Char(c @ '1'..='6') => c as usize - '1' as usize,
+            KeyCode::Char(c @ '1'..='7') => c as usize - '1' as usize,
             _ => self.page,
         };
         if page != self.page {
@@ -72,7 +72,7 @@ impl Tour {
                 )
                 .title_bottom(Line::styled(
                     format!(
-                        " {dots}  ←→ {}  1-6 {}  Esc {} ",
+                        " {dots}  ←→ {}  1-{PAGES} {}  Esc {} ",
                         tr("navegar", "navigate"),
                         tr("ir a", "go to"),
                         tr("cerrar", "close")
@@ -103,8 +103,8 @@ fn slide(page: usize, t: u64) -> Slide {
                 (
                     "Tab / Alt+1..9",
                     tr(
-                        "cambiar de proyecto (el borrador se conserva)",
-                        "switch project (drafts are kept)",
+                        "cambiar de proyecto del grupo (el borrador se conserva)",
+                        "switch project within the group (drafts are kept)",
                     ),
                 ),
                 (
@@ -126,6 +126,43 @@ fn slide(page: usize, t: u64) -> Slide {
             demo_tabs(t),
         ),
         1 => (
+            tr(
+                "Grupos y sesiones multiproyecto",
+                "Groups and multi-project sessions",
+            ),
+            vec![
+                (
+                    "{ / }",
+                    tr(
+                        "cambiar de grupo (`group` en projects.toml)",
+                        "switch group (`group` in projects.toml)",
+                    ),
+                ),
+                (
+                    "g",
+                    tr(
+                        "una sesión con varios proyectos (--add-dir)",
+                        "one session across several projects (--add-dir)",
+                    ),
+                ),
+                (
+                    "Espacio a g n",
+                    tr(
+                        "elegir · todos · grupo · alias; Enter inicia",
+                        "pick · all · group · alias; Enter starts",
+                    ),
+                ),
+                (
+                    "Tab",
+                    tr(
+                        "en el selector: sesiones guardadas (sessions.toml)",
+                        "in the picker: saved sessions (sessions.toml)",
+                    ),
+                ),
+            ],
+            demo_groups(t),
+        ),
+        2 => (
             tr("Escribe prompts", "Write prompts"),
             vec![
                 (
@@ -160,7 +197,7 @@ fn slide(page: usize, t: u64) -> Slide {
             ],
             demo_typing(t),
         ),
-        2 => (
+        3 => (
             tr(
                 "Tú decides qué puede hacer Copilot",
                 "You decide what Copilot may do",
@@ -190,7 +227,7 @@ fn slide(page: usize, t: u64) -> Slide {
             ],
             demo_perm(t),
         ),
-        3 => (
+        4 => (
             tr(
                 "Agentes y subagentes en tiempo real",
                 "Agents and subagents in real time",
@@ -227,7 +264,7 @@ fn slide(page: usize, t: u64) -> Slide {
             ],
             demo_fleet(t),
         ),
-        4 => (
+        5 => (
             tr("Ajusta la sesión a tu medida", "Tune the session"),
             vec![
                 (
@@ -294,6 +331,48 @@ fn demo_tabs(t: u64) -> Vec<Line<'static>> {
         Line::from(spans),
         Line::styled(format!("   cwd = ~/projects/{}", names[on]), fg(c_dim())),
     ]
+}
+
+fn demo_groups(t: u64) -> Vec<Line<'static>> {
+    let groups = ["Core 26", "UI 5", "BFF 5", "Custom Grouping 1"];
+    let on = (t / 15) as usize % groups.len();
+    let mut row = vec![Span::raw(" ")];
+    for (i, g) in groups.iter().enumerate() {
+        let style = if i == on {
+            bold(c_bg()).bg(c_accent())
+        } else {
+            fg(c_dim())
+        };
+        row.push(Span::styled(format!(" {g} "), style));
+        row.push(Span::raw(" "));
+    }
+    let names = ["api", "web", "docs"];
+    let picked = (t / 12) as usize % 4;
+    let mut picks = vec![Span::raw(" ")];
+    for (i, n) in names.iter().enumerate() {
+        let (mark, style) = if i < picked {
+            (format!("[{}]", i + 1), bold(c_fg()))
+        } else {
+            ("[ ]".into(), fg(c_dim()))
+        };
+        picks.push(Span::styled(format!(" {mark} {n} "), style));
+    }
+    let result = if picked >= 2 {
+        let joined = names[..picked].join(" + ");
+        Line::styled(
+            format!("   → {joined}  (cwd = {}, --add-dir …)", names[0]),
+            fg(c_ok()),
+        )
+    } else {
+        Line::styled(
+            tr(
+                "   elige al menos 2 proyectos",
+                "   pick at least 2 projects",
+            ),
+            fg(c_dim()),
+        )
+    };
+    vec![Line::from(row), Line::from(picks), result]
 }
 
 fn typed(text: &'static str, t: u64) -> (String, bool) {
@@ -439,7 +518,9 @@ mod tests {
         assert_eq!(t.page, 0);
         assert!(!t.on_key(KeyCode::Char('4'), 5));
         assert_eq!((t.page, t.t0), (3, 5));
-        assert!(!t.on_key(KeyCode::Right, 6));
+        assert!(!t.on_key(KeyCode::Char('7'), 5));
+        assert_eq!(t.page, 6);
+        assert!(!t.on_key(KeyCode::Char('6'), 5));
         assert!(!t.on_key(KeyCode::Right, 6));
         assert!(t.on_key(KeyCode::Enter, 7), "Enter on the last page closes");
         assert!(Tour::new(0).on_key(KeyCode::Esc, 0));
