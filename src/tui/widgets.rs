@@ -216,6 +216,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         app.confirm.as_ref(),
         dash == Dash::Full,
         others_pending,
+        app.groups().len() > 1,
     );
     if app.confirm == Some(Confirm::AllowAll) {
         modals::draw_confirm(f, area);
@@ -1428,6 +1429,7 @@ fn draw_status(
     confirm: Option<&Confirm>,
     full: bool,
     others: usize,
+    grouped: bool,
 ) {
     let line = if confirm == Some(&Confirm::AllowAll) {
         Line::styled(
@@ -1510,6 +1512,13 @@ fn draw_status(
         let mut h = vec![
             ("Enter", tr("escribir", "type")),
             ("↑↓ PgUp/Dn", "scroll"),
+            ("Tab", tr("proyecto", "project")),
+        ];
+        if grouped {
+            h.push(("{ }", tr("grupo", "group")));
+        }
+        h.extend([
+            ("g", tr("multi-sesión", "multi-session")),
             ("d", "dashboard"),
             ("o", tr("abrir", "open")),
             ("S", tr("ajustes", "settings")),
@@ -1525,8 +1534,7 @@ fn draw_status(
                     "allow all"
                 },
             ),
-            ("Tab", tr("proyecto", "project")),
-        ];
+        ]);
         if t.working() {
             h.push(("Esc", tr("cancelar", "cancel")));
         }
@@ -1585,6 +1593,19 @@ mod tests {
         let s = screen(&mut a, 160, 20);
         assert!(s.contains("25 ") && s.contains("svc-24"), "{s}");
         assert!(!s.contains("1 ● svc-00"), "{s}");
+    }
+
+    #[test]
+    fn status_bar_shows_group_and_multi_session_keys() {
+        let mut a = app(vec![tab("a")]);
+        let s = screen(&mut a, 200, 20);
+        assert!(s.contains(" g ") && !s.contains(" { } "), "{s}");
+        let mut b = tab("b");
+        b.group = Some("X".into());
+        a.tabs[0].group = Some("Y".into());
+        a.tabs.push(b);
+        let s = screen(&mut a, 200, 20);
+        assert!(s.contains(" { } ") && s.contains("multi-sesión"), "{s}");
     }
 
     fn busy_tab() -> Tab {
