@@ -252,28 +252,58 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     }
 }
 
-fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
-    let mut spans = vec![];
-    let groups = app.groups();
-    if groups.len() > 1 {
-        let cur = app.tabs[app.current].group.as_deref();
-        let at = groups.iter().position(|g| *g == cur).unwrap_or(0);
-        let others_attention = app
-            .tabs
-            .iter()
-            .any(|t| t.group.as_deref() != cur && t.perm.is_some());
-        spans.push(Span::styled(
-            format!(" {} {}/{} ", cur.unwrap_or("—"), at + 1, groups.len()),
-            bold(c_bg()).bg(c_accent()),
-        ));
-        if others_attention {
-            spans.push(Span::styled(" ! ", bold(c_bg()).bg(c_error())));
-        }
-        spans.push(Span::raw(" "));
+/// Joins `items` into one line at most `width` wide, dropping leading items so `active` stays visible.
+fn windowed(items: Vec<Vec<Span<'_>>>, active: usize, width: usize) -> Line<'_> {
+    let w = |it: &Vec<Span>| it.iter().map(Span::width).sum::<usize>();
+    let mut start = 0;
+    while start < active && items[start..=active].iter().map(w).sum::<usize>() > width {
+        start += 1;
     }
+    Line::from(items.into_iter().skip(start).flatten().collect::<Vec<_>>())
+}
+
+fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
+    let groups = app.groups();
+    let cur_group = app.tabs[app.current].group.as_deref();
+    let group_items: Vec<Vec<Span>> = if groups.len() > 1 {
+        groups
+            .iter()
+            .map(|g| {
+                let members = app.tabs.iter().filter(|t| t.group.as_deref() == *g);
+                let (mut n, mut work, mut perm) = (0, false, false);
+                for t in members {
+                    n += 1;
+                    work |= t.working();
+                    perm |= t.perm.is_some();
+                }
+                let sel = *g == cur_group;
+                let style = if sel {
+                    bold(c_bg()).bg(c_accent())
+                } else {
+                    fg(c_dim())
+                };
+                let mut v = vec![Span::styled(format!(" {} {n} ", g.unwrap_or("—")), style)];
+                if perm {
+                    v.push(Span::styled("!", bold(c_error())));
+                } else if work {
+                    v.push(Span::styled("●", fg(c_running())));
+                }
+                v.push(Span::styled(" ", fg(c_border())));
+                v
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+    let group_active = groups.iter().position(|g| *g == cur_group).unwrap_or(0);
+    let mut tab_active = 0;
+    let mut tab_items: Vec<Vec<Span>> = vec![];
     for (n, i) in app.group_tabs().into_iter().enumerate() {
         let t = &app.tabs[i];
         let active = i == app.current;
+        if active {
+            tab_active = n;
+        }
         let base = if active {
             bold(c_fg()).bg(c_surface())
         } else {
@@ -295,8 +325,8 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
                 bold(c_purple()).patch(Style::new().bg(if active { c_surface() } else { c_bg() })),
             ));
         }
-        spans.extend(label);
-        spans.push(Span::styled("│", fg(c_border())));
+        label.push(Span::styled("│", fg(c_border())));
+        tab_items.push(label);
     }
     let working = app.tabs.iter().filter(|t| t.working()).count();
     let subs: usize = app.tabs.iter().map(|t| t.tree.active_subagents()).sum();
@@ -330,11 +360,7 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
         ]),
         None => Line::default(),
     };
-    let tabs_line = Line::from(spans);
-    let content_w = quip_line
-        .width()
-        .max(summary.width())
-        .max(tabs_line.width());
+    let content_w = quip_line.width().max(summary.width());
 
     const MONTH_W: u16 = 24;
     const PATROL_BOX_W: u16 = 28;
@@ -383,8 +409,8 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
             quip_line,
             Line::default(),
             summary,
-            Line::default(),
-            tabs_line,
+            windowed(group_items, group_active, right.width as usize),
+            windowed(tab_items, tab_active, right.width as usize),
         ]),
         right,
     );
@@ -1538,6 +1564,24 @@ mod tests {
             .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>())
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn group_row_lists_groups_and_tab_bar_follows_active_tab() {
+        let g = |n: String, g: &str| {
+            let mut t = tab(&n);
+            t.group = Some(g.into());
+            t
+        };
+        let mut ts: Vec<Tab> = (0..26).map(|i| g(format!("svc-{i:02}"), "Core")).collect();
+        ts.push(g("ui-app".into(), "UI"));
+        let mut a = app(ts);
+        let s = screen(&mut a, 160, 20);
+        assert!(s.contains("Core 26") && s.contains("UI 1"), "{s}");
+        a.current = 24;
+        let s = screen(&mut a, 160, 20);
+        assert!(s.contains("25 ") && s.contains("svc-24"), "{s}");
+        assert!(!s.contains("1 ● svc-00"), "{s}");
     }
 
     fn busy_tab() -> Tab {
