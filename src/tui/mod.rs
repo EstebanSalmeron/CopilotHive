@@ -766,7 +766,17 @@ impl App {
                 multi::Action::Close => self.multi = None,
                 multi::Action::Start(items) => {
                     self.multi = None;
-                    self.open_multi(items);
+                    let saved = multi::Saved::from_items(&items);
+                    let note = multi::remember(&saved).err();
+                    self.open_multi(saved);
+                    if let Some(e) = note {
+                        let t = &mut self.tabs[self.current];
+                        t.push(Item::Note(format!("sessions.toml: {e}")));
+                    }
+                }
+                multi::Action::Open(saved) => {
+                    self.multi = None;
+                    self.open_multi(saved);
                 }
             }
             return false;
@@ -1107,24 +1117,18 @@ impl App {
                 });
             }
         }
-        self.multi = Some(multi::Picker::new(items, sel));
+        self.multi = Some(multi::Picker::new(items, sel, multi::load()));
     }
 
-    /// Starts one session in the first project's folder with the others added via `--add-dir`.
-    fn open_multi(&mut self, items: Vec<multi::Item>) {
-        let Some(first) = items.first() else { return };
-        let extra = items.iter().skip(1).map(|i| i.cwd.clone()).collect();
+    /// Starts one session in the first folder with the others added via `--add-dir`.
+    fn open_multi(&mut self, saved: multi::Saved) {
+        let Some((first, rest)) = saved.dirs.split_first() else {
+            return;
+        };
         let id = self.next_id;
         self.next_id += 1;
-        let mut tab = spawn_tab(
-            id,
-            multi::title(&items),
-            first.cwd.clone(),
-            extra,
-            None,
-            &self.tx,
-        );
-        tab.group = first.group.clone();
+        let mut tab = spawn_tab(id, saved.name, first.clone(), rest.to_vec(), None, &self.tx);
+        tab.group = saved.group;
         self.tabs.push(tab);
         self.current = self.tabs.len() - 1;
     }
