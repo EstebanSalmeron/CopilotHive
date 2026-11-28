@@ -9,6 +9,8 @@ It connects to Copilot over **ACP** ([Agent Client Protocol](https://docs.github
 ## Key features
 
 - **Multi-project tabs:** open multiple repositories at once (from config or with the folder picker `o`), each with its own ACP session, independent prompt draft, and status indicator.
+- **Project groups:** tag projects with an optional `group` in the config; the header lists every group (project count, `●` working, red `!` pending permission) and shows only the current group's tabs. Switch group with `{` / `}`; `Tab` and `Alt+1..9` move within the group.
+- **Multi-project sessions (`g`):** pick any set of open projects (they appear under the `Custom Grouping` group, always the first one in the group row, even when empty; `G` opens the saved list directly; selecting the group with `{`/`}` while it has no open sessions shows the saved ones) (or a whole group with `g` inside the picker) and start one session that can access all of them. Started sessions are remembered in `~/.config/copilot-hive/sessions.toml` and can be reopened after a restart (`Tab` inside the picker).
 - **Real-time dashboard:** sidebar panel (`d`) and full view (`s`) showing running agents, grouped completed history, spend bars, assigned vs. actual models, and tool call activity.
 - **Permissions & `/fleet`:** approve or deny requests (`y`/`n`/`a`), jump to the next blocked project with `!`, toggle *allow all* (`A`), or dispatch parallel subagents with `/fleet` (`f`).
 - **Usage & monthly budget:** live AI Credits (and USD estimate) per agent, per session, and month-to-date across all projects in the header.
@@ -52,13 +54,25 @@ name = "web-app"
 path = "/path/to/web-app"
 ```
 
+Add an optional `group` to organise many projects. Groups are ordered by first appearance; projects without a `group` form their own group, so existing configs behave as before:
+
+```toml
+[[projects]]
+name = "bestone-bi4-sales-core-customerservice"
+path = "/path/to/customerservice"
+group = "Core"
+```
+
 If the file does not exist, Copilot Hive opens in the current working directory. See [`docs/config.example.toml`](docs/config.example.toml) for a template.
 
 ## Quick keybindings
 
 | Key | Action |
 |-----|--------|
-| `Tab` / `Alt+1..9` | Switch project tab |
+| `Tab` / `Alt+1..9` | Switch project tab within the current group |
+| `}` / `{` | Next / previous group |
+| `x` | Close the current tab (asks first if it is working; the last tab can't be closed) |
+| `g` | Multi-project session: `/` fuzzy search, `Space` pick (first = `cwd`), `a` all, `g` whole group, `c` clear, `Enter` start (always asks for an alias first; empty = none), `n` alias, `Tab` saved sessions (`Enter` open, `r` alias, `d` twice to delete) · `G` opens the saved list directly |
 | `Enter` / `i` | Compose prompt (`Alt+Enter` / `Ctrl+J` newline, `Ctrl+S` save prompt, `Ctrl+V` paste image on macOS) |
 | `f` | Open prompt prefilled with `/fleet ` |
 | `p` | Local saved prompts |
@@ -68,7 +82,7 @@ If the file does not exist, Copilot Hive opens in the current working directory.
 | `m` / `e` | Change model / reasoning effort |
 | `H` / `o` | Session history / open folder in new tab |
 | `M` / `S` / `A` | MCP servers / settings (theme & language) / allow all |
-| `?` / `q` | Help / quit |
+| `?` / `q` | Help (in the selected language, English or Spanish) / quit |
 
 Full keybinding reference in [`docs/tui-keys.md`](docs/tui-keys.md).
 

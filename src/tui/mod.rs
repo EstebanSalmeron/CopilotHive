@@ -13,6 +13,7 @@ mod input;
 mod markdown;
 mod mcp;
 mod modals;
+mod multi;
 mod open;
 mod prompts;
 mod session;
@@ -163,6 +164,10 @@ struct Tab {
     dash_sel: Option<String>,
     /// MCP servers the session was started with, and whether each is enabled.
     mcp: Vec<(mcp::Server, bool)>,
+    /// Project group; tabs without one form their own implicit group.
+    group: Option<String>,
+    /// Extra directories the session may access (`copilot --add-dir`); empty for single projects.
+    extra_dirs: Vec<String>,
 }
 
 impl Drop for Tab {
@@ -209,6 +214,8 @@ impl Tab {
             assigned,
             dash_sel: None,
             mcp: vec![],
+            group: None,
+            extra_dirs: vec![],
         }
     }
 
@@ -448,6 +455,11 @@ pub struct App {
     open: Option<open::Browser>,
     settings: Option<settings::Menu>,
     mcp: Option<mcp::Menu>,
+    multi: Option<multi::Picker>,
+    /// Tab that was current when the (empty) custom group was selected; see `custom_empty`.
+    empty_view: Option<usize>,
+    /// Number of sessions in sessions.toml, shown on the custom group chip.
+    pub(super) saved_n: usize,
     prompts: Option<prompts::Menu>,
     month_label: String,
     month_sessions: HashMap<String, u64>,
@@ -559,6 +571,7 @@ impl App {
             || self.open.is_some()
             || self.settings.is_some()
             || self.mcp.is_some()
+            || self.multi.is_some()
             || self.prompts.is_some()
             || self.tabs[self.current].perm.is_some()
     }
@@ -664,10 +677,69 @@ impl App {
         }
     }
 
-    fn switch(&mut self, to: usize) {
-        if to < self.tabs.len() {
-            self.current = to;
+    /// Indices of the tabs in the current tab's group, in tab order.
+    pub(super) fn group_tabs(&self) -> Vec<usize> {
+        let g = self.cur_group();
+        (0..self.tabs.len())
+            .filter(|&i| self.tabs[i].group.as_deref() == g)
+            .collect()
+    }
+
+    /// The custom group has no tabs yet and is the one being viewed. It stays "viewed" only
+    /// while `current` is unchanged, so any tab switch leaves it.
+    pub(super) fn custom_empty(&self) -> bool {
+        self.empty_view == Some(self.current)
+            && !self
+                .tabs
+                .iter()
+                .any(|t| t.group.as_deref() == Some(multi::GROUP))
+    }
+
+    pub(super) fn cur_group(&self) -> Option<&str> {
+        if self.custom_empty() {
+            Some(multi::GROUP)
+        } else {
+            self.tabs[self.current].group.as_deref()
         }
+    }
+
+    /// The custom group first (even with no tabs), then the others in order of first
+    /// appearance (`None` = ungrouped tabs).
+    pub(super) fn groups(&self) -> Vec<Option<&str>> {
+        let mut out: Vec<Option<&str>> = vec![Some(multi::GROUP)];
+        for t in &self.tabs {
+            let g = t.group.as_deref();
+            if !out.contains(&g) {
+                out.push(g);
+            }
+        }
+        out
+    }
+
+    /// Selects the `to`-th tab of the current group.
+    fn switch(&mut self, to: usize) {
+        if let Some(&i) = self.group_tabs().get(to) {
+            self.current = i;
+        }
+    }
+
+    /// Jumps to the first tab of the next/previous group; a no-op with a single group.
+    fn switch_group(&mut self, delta: isize) -> bool {
+        let groups = self.groups();
+        let cur = self.cur_group();
+        let at = groups.iter().position(|g| *g == cur).unwrap_or(0);
+        let to = groups[(at as isize + delta).rem_euclid(groups.len() as isize) as usize];
+        if let Some(i) = self.tabs.iter().position(|t| t.group.as_deref() == to) {
+            self.current = i;
+            self.empty_view = None;
+        } else {
+            self.empty_view = Some(self.current);
+            // Saved sessions are not reopened on startup; offer them when the group is selected.
+            if !multi::load().is_empty() {
+                self.open_multi_picker(true);
+            }
+        }
+        false
     }
 
     /// Returns true to quit.
@@ -715,6 +787,45 @@ impl App {
                     self.mcp = None;
                     self.restart_current(false);
                 }
+            }
+            return false;
+        }
+        if let Some(m) = &mut self.multi {
+            let action = m.on_key(code);
+            if !matches!(action, multi::Action::None) {
+                self.saved_n = multi::load().len();
+            }
+            match action {
+                multi::Action::None => {}
+                multi::Action::Close => self.multi = None,
+                multi::Action::Start(items, alias) => {
+                    self.multi = None;
+                    let saved = multi::Saved::from_items(&items, alias);
+                    let (saved, note) = multi::remember(saved);
+                    self.open_multi(saved);
+                    if let Some(e) = note {
+                        let t = &mut self.tabs[self.current];
+                        t.push(Item::Note(format!("sessions.toml: {e}")));
+                    }
+                }
+                multi::Action::Open(saved) => {
+                    self.multi = None;
+                    self.open_multi(saved);
+                }
+            }
+            return false;
+        }
+        if self.custom_empty() {
+            match code {
+                KeyCode::Char('{') => return self.switch_group(-1),
+                KeyCode::Char('}') => return self.switch_group(1),
+                KeyCode::Char('g') => self.open_multi_picker(false),
+                KeyCode::Char('G') => self.open_multi_picker(true),
+                KeyCode::Char('q') if self.tabs.iter().any(Tab::working) => {
+                    self.confirm = Some(Confirm::Quit);
+                }
+                KeyCode::Char('q') => return true,
+                _ => {}
             }
             return false;
         }
@@ -773,7 +884,7 @@ impl App {
         let t = &mut self.tabs[self.current];
         match code {
             KeyCode::Tab => return self.switch_by(1),
-            KeyCode::BackTab => return self.switch_by(n - 1),
+            KeyCode::BackTab => return self.switch_by(-1),
             KeyCode::Char('c') if ctrl => {
                 t.cancel_turn();
                 return false;
@@ -856,6 +967,8 @@ impl App {
             KeyCode::End => self.scroll_pane_edge(self.focus, false),
             KeyCode::Char('k') => self.scroll_pane(self.focus, -1),
             KeyCode::Char('j') => self.scroll_pane(self.focus, 1),
+            KeyCode::Char('}') => return self.switch_group(1),
+            KeyCode::Char('{') => return self.switch_group(-1),
             KeyCode::Char(']') => self.cycle_focus(1),
             KeyCode::Char('[') => self.cycle_focus(-1),
             KeyCode::Char('q') => {
@@ -897,6 +1010,8 @@ impl App {
             KeyCode::Char('A') => self.confirm = Some(Confirm::AllowAll),
             KeyCode::Char('m') => self.open_selector(true),
             KeyCode::Char('e') => self.open_selector(false),
+            KeyCode::Char('g') => self.open_multi_picker(false),
+            KeyCode::Char('G') => self.open_multi_picker(true),
             KeyCode::Char('M') => self.mcp = Some(mcp::Menu::new(&t.name, &t.cwd)),
             KeyCode::Char('p') => {
                 let draft = t.editor.text.clone();
@@ -968,11 +1083,12 @@ impl App {
     /// so a changed MCP server list takes effect.
     fn restart_current(&mut self, fresh: bool) {
         let old = &self.tabs[self.current];
-        let (name, cwd) = (old.name.clone(), old.cwd.clone());
+        let (name, cwd, group) = (old.name.clone(), old.cwd.clone(), old.group.clone());
+        let extra = old.extra_dirs.clone();
         let sid = if fresh { None } else { old.sid.clone() };
         let id = self.next_id;
         self.next_id += 1;
-        let mut tab = spawn_tab(id, name, cwd, sid, &self.tx);
+        let mut tab = spawn_tab(id, name, cwd, extra, sid, &self.tx);
         let note = if fresh {
             settings::tr(
                 "sesión nueva (/clear): contexto vacío; allow all y modelo se restablecen",
@@ -984,6 +1100,7 @@ impl App {
                 "session restarted (/restart): agents and MCP reloaded; allow all and model are reset",
             )
         };
+        tab.group = group;
         tab.push(Item::Note(note.into()));
         self.tabs[self.current] = tab;
     }
@@ -999,10 +1116,16 @@ impl App {
             return;
         }
         let cur = &self.tabs[self.current];
-        let (name, cwd) = (format!("{} ↺", cur.name), cur.cwd.clone());
+        let (name, cwd, group) = (
+            format!("{} ↺", cur.name),
+            cur.cwd.clone(),
+            cur.group.clone(),
+        );
+        let extra = cur.extra_dirs.clone();
         let id = self.next_id;
         self.next_id += 1;
-        let mut tab = spawn_tab(id, name, cwd, Some(sid), &self.tx);
+        let mut tab = spawn_tab(id, name, cwd, extra, Some(sid), &self.tx);
+        tab.group = group;
         tab.push(Item::Note(tr_fmt!(
             "sesión reanudada: {title}",
             "session resumed: {title}"
@@ -1021,7 +1144,48 @@ impl App {
             .unwrap_or_else(|| cwd.clone());
         let id = self.next_id;
         self.next_id += 1;
-        let tab = spawn_tab(id, name, cwd, None, &self.tx);
+        let mut tab = spawn_tab(id, name, cwd, vec![], None, &self.tx);
+        tab.group = self.tabs[self.current].group.clone();
+        self.tabs.push(tab);
+        self.current = self.tabs.len() - 1;
+    }
+
+    /// Lists the single-project tabs (deduplicated by folder) for the multi-project picker.
+    fn open_multi_picker(&mut self, saved: bool) {
+        let mut items: Vec<multi::Item> = vec![];
+        let mut sel = 0;
+        for (i, t) in self.tabs.iter().enumerate() {
+            if t.extra_dirs.is_empty() && items.iter().all(|it| it.cwd != t.cwd) {
+                if i == self.current {
+                    sel = items.len();
+                }
+                items.push(multi::Item {
+                    name: t.name.clone(),
+                    cwd: t.cwd.clone(),
+                    group: t.group.clone(),
+                });
+            }
+        }
+        let p = multi::Picker::new(items, sel, multi::load());
+        self.multi = Some(if saved { p.show_saved() } else { p });
+    }
+
+    /// Starts one session in the first folder with the others added via `--add-dir`.
+    fn open_multi(&mut self, saved: multi::Saved) {
+        let Some((first, rest)) = saved.dirs.split_first() else {
+            return;
+        };
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut tab = spawn_tab(
+            id,
+            saved.label().to_string(),
+            first.clone(),
+            rest.to_vec(),
+            None,
+            &self.tx,
+        );
+        tab.group = Some(multi::GROUP.into());
         self.tabs.push(tab);
         self.current = self.tabs.len() - 1;
     }
@@ -1110,8 +1274,14 @@ impl App {
         }
     }
 
-    fn switch_by(&mut self, delta: usize) -> bool {
-        self.current = (self.current + delta) % self.tabs.len();
+    /// Cycles through the tabs of the current group.
+    fn switch_by(&mut self, delta: isize) -> bool {
+        let tabs = self.group_tabs();
+        if tabs.is_empty() {
+            return false;
+        }
+        let at = tabs.iter().position(|&i| i == self.current).unwrap_or(0);
+        self.current = tabs[(at as isize + delta).rem_euclid(tabs.len() as isize) as usize];
         false
     }
 
@@ -1191,7 +1361,8 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
             .with_context(|| format!("bad project path {}", p.path.display()))?
             .to_string_lossy()
             .into_owned();
-        let mut tab = spawn_tab(i, p.name.clone(), cwd, None, &tx);
+        let mut tab = spawn_tab(i, p.name.clone(), cwd, vec![], None, &tx);
+        tab.group = p.group.clone();
         let settings = agents::settings_path();
         for (agent, model) in &p.agent_models {
             if tab.assigned.get(agent) != Some(model) {
@@ -1228,6 +1399,7 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         });
     }
     let mut app = App {
+        saved_n: multi::load().len(),
         next_id: tabs.len(),
         tabs,
         current: 0,
@@ -1243,6 +1415,8 @@ pub async fn run(projects: Vec<Project>) -> Result<()> {
         open: None,
         settings: None,
         mcp: None,
+        multi: None,
+        empty_view: None,
         prompts: None,
         month_label: month.label,
         month_sessions: HashMap::new(),
@@ -1338,6 +1512,7 @@ mod tests {
     pub(super) fn app(mut tabs: Vec<Tab>) -> App {
         tabs.iter_mut().enumerate().for_each(|(i, t)| t.id = i);
         App {
+            saved_n: 0,
             next_id: tabs.len(),
             tabs,
             current: 0,
@@ -1353,6 +1528,8 @@ mod tests {
             open: None,
             settings: None,
             mcp: None,
+            multi: None,
+            empty_view: None,
             prompts: None,
             month_label: crate::history::current_month().label,
             month_sessions: HashMap::new(),
@@ -1382,6 +1559,37 @@ mod tests {
         s.down(1000);
         s.sync(53, 10);
         assert_eq!((s.off, s.unseen), (0, false));
+    }
+
+    #[test]
+    fn groups_scope_tab_cycling_and_alt_numbers() {
+        let g = |n: &str, g: &str| {
+            let mut t = tab(n);
+            t.group = Some(g.into());
+            t
+        };
+        let mut a = app(vec![g("a", "X"), g("b", "Y"), g("c", "X"), g("d", "Y")]);
+        a.on_key(key(KeyCode::Tab));
+        assert_eq!(a.current, 2); // skips "b": different group
+        a.on_key(key(KeyCode::Tab));
+        assert_eq!(a.current, 0);
+        a.on_key(key(KeyCode::BackTab));
+        assert_eq!(a.current, 2);
+        a.on_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::ALT));
+        assert_eq!(a.current, 2);
+        a.on_key(key(KeyCode::Char('}')));
+        assert_eq!(a.current, 1); // first tab of the next group
+        a.on_key(key(KeyCode::Char('{')));
+        assert_eq!(a.current, 0);
+        a.on_key(key(KeyCode::Char('{')));
+        assert!(a.custom_empty()); // the custom group comes first, even when empty
+        assert!(a.group_tabs().is_empty());
+        a.multi = None; // the saved-sessions list may open here
+        a.on_key(key(KeyCode::Char('x'))); // keys can't reach the hidden tab
+        assert!(a.tabs[0].editor.is_empty() && a.tabs.len() == 4);
+        a.on_key(key(KeyCode::Char('{')));
+        assert_eq!((a.custom_empty(), a.current), (false, 1)); // wraps around
+        assert_eq!(a.groups()[0], Some(multi::GROUP));
     }
 
     #[test]
@@ -1529,6 +1737,36 @@ mod tests {
         assert_eq!(a.tabs[1].cwd, canonical.to_string_lossy());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn multi_picker_starts_session_with_extra_dirs() {
+        let mut ts: Vec<Tab> = ["a", "b", "c"]
+            .iter()
+            .map(|n| {
+                let mut t = tab(n);
+                t.cwd = format!("/tmp/hive-nonexistent/{n}");
+                t.group = Some("G".into());
+                t
+            })
+            .collect();
+        ts[1].extra_dirs = vec!["/x".into()]; // a multi tab is not offered
+        let mut a = app(ts);
+        a.on_key(key(KeyCode::Char('g')));
+        assert!(a.multi.is_some());
+        a.on_key(key(KeyCode::Char(' '))); // a
+        a.on_key(key(KeyCode::Char('j')));
+        a.on_key(key(KeyCode::Char(' '))); // c (b is skipped)
+        a.on_key(key(KeyCode::Enter));
+        assert!(a.multi.is_some()); // alias prompt
+        a.on_key(key(KeyCode::Enter));
+        assert!(a.multi.is_none());
+        assert_eq!(a.tabs.len(), 4);
+        let t = &a.tabs[3];
+        assert_eq!(t.name, "a + c");
+        assert_eq!(t.cwd, "/tmp/hive-nonexistent/a");
+        assert_eq!(t.extra_dirs, ["/tmp/hive-nonexistent/c"]);
+        assert_eq!((a.current, t.group.as_deref()), (3, Some(multi::GROUP)));
     }
 
     #[test]

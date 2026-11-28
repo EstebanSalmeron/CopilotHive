@@ -195,7 +195,21 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect) {
             "Tab / Shift+Tab",
             tr("siguiente / anterior proyecto", "next / previous project"),
         ),
-        ("Alt+1..9", tr("ir al proyecto n", "go to project n")),
+        (
+            "Alt+1..9",
+            tr("ir al proyecto n del grupo", "go to project n of the group"),
+        ),
+        (
+            "{ / }",
+            tr("grupo anterior / siguiente", "previous / next group"),
+        ),
+        (
+            "g",
+            tr(
+                "sesión multiproyecto (--add-dir)",
+                "multi-project session (--add-dir)",
+            ),
+        ),
         (
             "!",
             tr(
@@ -303,14 +317,14 @@ pub(super) fn draw_help(f: &mut Frame, area: Rect) {
             ),
         ),
         (
-            "Enter (subagentes)",
+            tr("Enter (subagentes)", "Enter (subagents)"),
             tr(
                 "abre el prompt para pedir a Copilot que use el agente elegido",
                 "opens the prompt asking Copilot to use the selected agent",
             ),
         ),
         (
-            "↑ ↓ (subagentes)",
+            tr("↑ ↓ (subagentes)", "↑ ↓ (subagents)"),
             tr(
                 "elegir agente; m fija su modelo obligatorio 🔒",
                 "pick agent; m sets its required model 🔒",

@@ -9,7 +9,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Paragraph};
+use ratatui::widgets::{Block, BorderType, Clear, Paragraph};
 use std::borrow::Cow;
 use std::time::Duration;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
@@ -216,6 +216,7 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         app.confirm.as_ref(),
         dash == Dash::Full,
         others_pending,
+        app.groups().len() > 1,
     );
     if app.confirm == Some(Confirm::AllowAll) {
         modals::draw_confirm(f, area);
@@ -225,6 +226,32 @@ pub fn draw(app: &mut App, f: &mut Frame) {
         modals::draw_perm(t, f, area, tick, others_pending);
     } else if let Some(pos) = cursor.filter(|_| t.typing && !modal_open) {
         f.set_cursor_position(pos);
+    }
+    if app.custom_empty() {
+        let r = Rect::new(area.x, info.y, area.width, info.height + 1 + body.height);
+        f.render_widget(Clear, r);
+        f.render_widget(
+            Paragraph::new(vec![
+                Line::styled(
+                    tr_fmt!(
+                        "«{}» está vacío",
+                        "“{}” is empty",
+                        crate::tui::multi::GROUP
+                    ),
+                    bold(c_accent()),
+                ),
+                Line::default(),
+                Line::styled(
+                    tr(
+                        "g crear una sesión multiproyecto · G ver/borrar las guardadas · { } cambiar de grupo",
+                        "g create a multi-project session · G see/delete saved ones · { } switch group",
+                    ),
+                    fg(c_dim()),
+                ),
+            ])
+            .alignment(Alignment::Center),
+            centered(r, r.width, 3),
+        );
     }
     if let Some(h) = &mut app.history {
         h.draw(
@@ -241,6 +268,9 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     if let Some(m) = &app.mcp {
         m.draw(f, area);
     }
+    if let Some(m) = &app.multi {
+        m.draw(f, area);
+    }
     if let Some(p) = &app.prompts {
         p.draw(f, area);
     }
@@ -252,17 +282,73 @@ pub fn draw(app: &mut App, f: &mut Frame) {
     }
 }
 
+/// Joins `items` into one line at most `width` wide, dropping leading items so `active` stays visible.
+fn windowed(items: Vec<Vec<Span<'_>>>, active: usize, width: usize) -> Line<'_> {
+    let w = |it: &Vec<Span>| it.iter().map(Span::width).sum::<usize>();
+    let mut start = 0;
+    while start < active && items[start..=active].iter().map(w).sum::<usize>() > width {
+        start += 1;
+    }
+    Line::from(items.into_iter().skip(start).flatten().collect::<Vec<_>>())
+}
+
 fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
-    let mut spans = vec![];
-    for (i, t) in app.tabs.iter().enumerate() {
+    let groups = app.groups();
+    let cur_group = app.cur_group();
+    let group_items: Vec<Vec<Span>> = if groups.len() > 1 {
+        groups
+            .iter()
+            .map(|g| {
+                let members = app.tabs.iter().filter(|t| t.group.as_deref() == *g);
+                let (mut n, mut work, mut perm) = (0, false, false);
+                for t in members {
+                    n += 1;
+                    work |= t.working();
+                    perm |= t.perm.is_some();
+                }
+                let sel = *g == cur_group;
+                let style = if sel {
+                    bold(c_bg()).bg(c_accent())
+                } else {
+                    fg(c_dim())
+                };
+                let count = if *g == Some(crate::tui::multi::GROUP) {
+                    format!("{n}/{}", app.saved_n)
+                } else {
+                    n.to_string()
+                };
+                let mut v = vec![Span::styled(
+                    format!(" {} {count} ", g.unwrap_or("—")),
+                    style,
+                )];
+                if perm {
+                    v.push(Span::styled("!", bold(c_error())));
+                } else if work {
+                    v.push(Span::styled("●", fg(c_running())));
+                }
+                v.push(Span::styled(" ", fg(c_border())));
+                v
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+    let group_active = groups.iter().position(|g| *g == cur_group).unwrap_or(0);
+    let mut tab_active = 0;
+    let mut tab_items: Vec<Vec<Span>> = vec![];
+    for (n, i) in app.group_tabs().into_iter().enumerate() {
+        let t = &app.tabs[i];
         let active = i == app.current;
+        if active {
+            tab_active = n;
+        }
         let base = if active {
             bold(c_fg()).bg(c_surface())
         } else {
             fg(c_dim())
         };
         let mut label = vec![
-            Span::styled(format!(" {} ", i + 1), fg(c_dim()).patch(base)),
+            Span::styled(format!(" {} ", n + 1), fg(c_dim()).patch(base)),
             status_icon(t, tick).patch_style(Style::new().bg(if active {
                 c_surface()
             } else {
@@ -277,8 +363,8 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
                 bold(c_purple()).patch(Style::new().bg(if active { c_surface() } else { c_bg() })),
             ));
         }
-        spans.extend(label);
-        spans.push(Span::styled("│", fg(c_border())));
+        label.push(Span::styled("│", fg(c_border())));
+        tab_items.push(label);
     }
     let working = app.tabs.iter().filter(|t| t.working()).count();
     let subs: usize = app.tabs.iter().map(|t| t.tree.active_subagents()).sum();
@@ -312,11 +398,7 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
         ]),
         None => Line::default(),
     };
-    let tabs_line = Line::from(spans);
-    let content_w = quip_line
-        .width()
-        .max(summary.width())
-        .max(tabs_line.width());
+    let content_w = quip_line.width().max(summary.width());
 
     const MONTH_W: u16 = 24;
     const PATROL_BOX_W: u16 = 28;
@@ -365,8 +447,8 @@ fn draw_tabs(app: &App, f: &mut Frame, tick: u64, area: Rect) {
             quip_line,
             Line::default(),
             summary,
-            Line::default(),
-            tabs_line,
+            windowed(group_items, group_active, right.width as usize),
+            windowed(tab_items, tab_active, right.width as usize),
         ]),
         right,
     );
@@ -1381,6 +1463,7 @@ fn draw_status(
     confirm: Option<&Confirm>,
     full: bool,
     others: usize,
+    grouped: bool,
 ) {
     let line = if confirm == Some(&Confirm::AllowAll) {
         Line::styled(
@@ -1463,6 +1546,13 @@ fn draw_status(
         let mut h = vec![
             ("Enter", tr("escribir", "type")),
             ("↑↓ PgUp/Dn", "scroll"),
+            ("Tab", tr("proyecto", "project")),
+        ];
+        if grouped {
+            h.push(("{ }", tr("grupo", "group")));
+        }
+        h.extend([
+            ("g", tr("multi-sesión", "multi-session")),
             ("d", "dashboard"),
             ("o", tr("abrir", "open")),
             ("S", tr("ajustes", "settings")),
@@ -1478,8 +1568,7 @@ fn draw_status(
                     "allow all"
                 },
             ),
-            ("Tab", tr("proyecto", "project")),
-        ];
+        ]);
         if t.working() {
             h.push(("Esc", tr("cancelar", "cancel")));
         }
@@ -1520,6 +1609,37 @@ mod tests {
             .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect::<String>())
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    #[test]
+    fn group_row_lists_groups_and_tab_bar_follows_active_tab() {
+        let g = |n: String, g: &str| {
+            let mut t = tab(&n);
+            t.group = Some(g.into());
+            t
+        };
+        let mut ts: Vec<Tab> = (0..26).map(|i| g(format!("svc-{i:02}"), "Core")).collect();
+        ts.push(g("ui-app".into(), "UI"));
+        let mut a = app(ts);
+        let s = screen(&mut a, 160, 20);
+        assert!(s.contains("Core 26") && s.contains("UI 1"), "{s}");
+        a.current = 24;
+        let s = screen(&mut a, 160, 20);
+        assert!(s.contains("25 ") && s.contains("svc-24"), "{s}");
+        assert!(!s.contains("1 ● svc-00"), "{s}");
+    }
+
+    #[test]
+    fn status_bar_shows_group_and_multi_session_keys() {
+        let mut a = app(vec![tab("a")]);
+        let s = screen(&mut a, 200, 20);
+        assert!(s.contains(" g "), "{s}");
+        let mut b = tab("b");
+        b.group = Some("X".into());
+        a.tabs[0].group = Some("Y".into());
+        a.tabs.push(b);
+        let s = screen(&mut a, 200, 20);
+        assert!(s.contains(" { } ") && s.contains("multi-sesión"), "{s}");
     }
 
     fn busy_tab() -> Tab {

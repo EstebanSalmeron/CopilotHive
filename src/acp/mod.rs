@@ -151,9 +151,10 @@ pub struct Perm {
 }
 
 impl Client {
-    pub fn spawn(cwd: &str, disabled_mcp: &[String]) -> Result<Self> {
+    pub fn spawn(cwd: &str, extra_dirs: &[String], disabled_mcp: &[String]) -> Result<Self> {
         let mut child = Command::new("copilot")
             .args(["--acp", "--stdio"])
+            .args(extra_dirs.iter().flat_map(|d| ["--add-dir", d.as_str()]))
             .args(
                 disabled_mcp
                     .iter()

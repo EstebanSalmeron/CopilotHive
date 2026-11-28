@@ -4,7 +4,8 @@
 
 | Modo | Tecla | Acción |
 |------|-------|--------|
-| Global | `Tab` / `Shift+Tab`, `Alt+1..9` | cambiar de proyecto (el borrador se conserva por pestaña) |
+| Global | `Tab` / `Shift+Tab`, `Alt+1..9` | cambiar de proyecto dentro del grupo actual (el borrador se conserva por pestaña) |
+| Normal | `}` / `{` | grupo siguiente / anterior (salta a su primera pestaña); sin efecto si no hay grupos. La barra muestra una fila con todos los grupos (nº de proyectos, `●` si trabajan, `!` rojo si hay un permiso pendiente; `!` salta a él) y, debajo, las pestañas del grupo actual (la barra se desplaza para mantener visible la activa) |
 | Global | `Ctrl+C` | cancelar el turno en curso (`session/cancel`) |
 | Normal | `Enter` / `i` | escribir un prompt |
 | Normal | `f` | `/fleet`: abre el prompt con `/fleet ` ya escrito; tras el objetivo, Copilot reparte el trabajo en subagentes paralelos (visibles en el dashboard `d`/`s`). `/fleet` es un comando que Copilot anuncia por ACP, así que se envía tal cual |
@@ -15,6 +16,7 @@
 | Normal | `d` | dashboard: mostrar / ocultar |
 | Normal | `s` | vista completa de subagentes: abrir / cerrar |
 | Normal | `H` | historial: sesiones anteriores del proyecto (`↑↓` elegir, `Enter` abrir, `r` reanudar en una pestaña nueva (`session/load`), `Esc` volver/cerrar; en la conversación `↑↓ PgUp/PgDn Home/End`) |
+| Normal | `g` | sesión multiproyecto: elige varios proyectos abiertos (`↑↓` mover, `/` búsqueda difusa por nombre o grupo (`Enter` sale de la caja y conserva el filtro, `Esc` lo limpia; `a` y `g` actúan solo sobre los resultados), `Espacio` elegir —el 1º es el `cwd`—, `a` elegir/quitar todos, `g` elegir/quitar todo el grupo, `c` limpiar, `n` poner un alias (nombre de la pestaña; Enter acepta, Esc cancela), `Enter` iniciar con ≥2 —siempre pide antes un alias, vacío = sin alias, `Esc` vuelve—, `Esc` cerrar; `G` abre directamente las guardadas). Abre una pestaña `a + b +N` en el grupo `Custom Grouping` (siempre el primero de la fila de grupos, aunque esté vacío; al seleccionarlo sin sesiones abiertas se muestra la lista de guardadas), con `copilot --acp --stdio --add-dir <resto>`: la sesión puede acceder a todas las carpetas, pero el contexto, el historial y los agentes/skills de proyecto son los del 1º. `/clear`, `/restart` y `H`→`r` conservan las carpetas extra. Cada sesión iniciada se guarda en `~/.config/copilot-hive/sessions.toml` (`[[sessions]]` con `name`, `alias` opcional, `dirs` —la 1ª es el `cwd`—; misma lista de carpetas = misma entrada); `Tab` en el selector alterna con las sesiones guardadas (`↑↓`, `Enter` abrir en una pestaña nueva, `r` poner/cambiar el alias —vacío lo quita—, `d` dos veces borra la sesión guardada; un alias ya guardado se conserva si reinicias la misma lista de carpetas). No se abren solas al arrancar |
 | Normal | `o` | abrir carpeta: explorador de directorios para abrir una nueva pestaña con sesión ACP nueva |
 | Abrir | `↑↓` / `j k`, `PgUp/PgDn`, `Home/End` | mover selección en el explorador |
 | Abrir | `Enter` / `→` / `l` | entrar en la carpeta seleccionada (o `..`; los archivos se muestran atenuados y no se abren) |
@@ -32,7 +34,7 @@
 | Normal | `!` | saltar al siguiente proyecto con permiso pendiente |
 | Normal | `?` | ayuda |
 | Normal | `C` / `R` | `/clear`: sesión ACP nueva en el mismo proyecto (contexto vacío) / `/restart`: reinicia el proceso y recarga la sesión (`session/load`) para aplicar cambios en agentes o MCP. Piden confirmación (`y`); allow all y modelo se restablecen. También se pueden escribir `/clear` o `/restart` como prompt (sin confirmación) |
-| Normal | `t` | tutorial animado de 6 páginas (`←→`/`Enter` navegar, `1-6` ir a, `Esc` cerrar); no se abre solo |
+| Normal | `t` | tutorial animado de 7 páginas (`←→`/`Enter` navegar, `1-7` ir a, `Esc` cerrar); no se abre solo |
 | Normal | `x` | cerrar la pestaña actual (confirma si trabaja; la última no se cierra) |
 | Normal | `q` | salir (confirma si hay agentes trabajando) |
 | Escribiendo | `Enter` | enviar |
